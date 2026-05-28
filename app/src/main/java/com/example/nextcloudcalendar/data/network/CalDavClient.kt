@@ -758,4 +758,143 @@ class CalDavClient(
             }
         })
     }
+
+    // Create a new Task List (MKCALENDAR)
+    fun createTaskList(listName: String, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
+        val rootUrl = if (baseUrl.endsWith("/")) baseUrl.substring(0, baseUrl.length - 1) else baseUrl
+        val listId = UUID.randomUUID().toString()
+        val url = "$rootUrl/remote.php/dav/calendars/$username/$listId/"
+
+        val mkcalendarBody = """<?xml version="1.0" encoding="utf-8" ?>
+        <c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+          <d:set>
+            <d:prop>
+              <d:displayname>$listName</d:displayname>
+              <c:supported-calendar-component-set>
+                <c:comp name="VTODO" />
+              </c:supported-calendar-component-set>
+            </d:prop>
+          </d:set>
+        </c:mkcalendar>""".trimIndent()
+
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", credentials)
+            .addHeader("Content-Type", "application/xml; charset=utf-8")
+            .method("MKCALENDAR", mkcalendarBody.toRequestBody("application/xml".toMediaType()))
+            .build()
+
+        client.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                runOnMain { onFailure(e) }
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                if (response.isSuccessful || response.code == 201) {
+                    runOnMain { onSuccess() }
+                } else {
+                    runOnMain { onFailure(Exception("HTTP Error: ${response.code}")) }
+                }
+            }
+        })
+    }
+
+    // Delete a Task List (DELETE)
+    fun deleteTaskList(calendarHref: String, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
+        val rootUrl = if (baseUrl.endsWith("/")) baseUrl.substring(0, baseUrl.length - 1) else baseUrl
+        val url = "$rootUrl$calendarHref"
+
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", credentials)
+            .delete()
+            .build()
+
+        client.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                runOnMain { onFailure(e) }
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                if (response.isSuccessful || response.code == 204) {
+                    runOnMain { onSuccess() }
+                } else {
+                    runOnMain { onFailure(Exception("HTTP Error: ${response.code}")) }
+                }
+            }
+        })
+    }
+
+    // Rename a Task List (PROPPATCH)
+    fun renameTaskList(calendarHref: String, newName: String, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
+        val rootUrl = if (baseUrl.endsWith("/")) baseUrl.substring(0, baseUrl.length - 1) else baseUrl
+        val url = "$rootUrl$calendarHref"
+
+        val proppatchBody = """<?xml version="1.0" encoding="utf-8" ?>
+        <d:propertyupdate xmlns:d="DAV:">
+          <d:set>
+            <d:prop>
+              <d:displayname>$newName</d:displayname>
+            </d:prop>
+          </d:set>
+        </d:propertyupdate>""".trimIndent()
+
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", credentials)
+            .addHeader("Content-Type", "application/xml; charset=utf-8")
+            .method("PROPPATCH", proppatchBody.toRequestBody("application/xml".toMediaType()))
+            .build()
+
+        client.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                runOnMain { onFailure(e) }
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                if (response.isSuccessful || response.code == 200 || response.code == 207) {
+                    runOnMain { onSuccess() }
+                } else {
+                    runOnMain { onFailure(Exception("HTTP Error: ${response.code}")) }
+                }
+            }
+        })
+    }
+
+    // Rename/Move a file or folder (MOVE)
+    fun renameFile(sourceHref: String, newName: String, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
+        val rootUrl = if (baseUrl.endsWith("/")) baseUrl.substring(0, baseUrl.length - 1) else baseUrl
+        val sourceUrl = "$rootUrl$sourceHref"
+        
+        val isDir = sourceHref.endsWith("/")
+        val cleanHref = if (isDir) sourceHref.substring(0, sourceHref.length - 1) else sourceHref
+        val parentHref = cleanHref.substring(0, cleanHref.lastIndexOf('/') + 1)
+        
+        // Nextcloud requires properly encoded destinations
+        val encodedNewName = java.net.URLEncoder.encode(newName, "UTF-8").replace("+", "%20")
+        val destPath = "$parentHref$encodedNewName" + (if (isDir) "/" else "")
+        val destUrl = "$rootUrl$destPath"
+
+        val request = Request.Builder()
+            .url(sourceUrl)
+            .addHeader("Authorization", credentials)
+            .addHeader("Destination", destUrl)
+            .addHeader("Overwrite", "F")
+            .method("MOVE", null)
+            .build()
+
+        client.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                runOnMain { onFailure(e) }
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                if (response.isSuccessful || response.code == 201 || response.code == 204) {
+                    runOnMain { onSuccess() }
+                } else {
+                    runOnMain { onFailure(Exception("HTTP Error: ${response.code}")) }
+                }
+            }
+        })
+    }
 }

@@ -1,6 +1,9 @@
 package com.example.nextcloudcalendar
 
 import android.os.Bundle
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import android.widget.Toast
@@ -123,6 +126,12 @@ fun NextcloudHubApp() {
     // Dialog States
     var showAddTaskDialog by remember { mutableStateOf(false) }
     var showAddEventDialog by remember { mutableStateOf(false) }
+    var showCreateTaskListDialog by remember { mutableStateOf(false) }
+    var showRenameTaskListDialog by remember { mutableStateOf(false) }
+    var showDeleteTaskListDialog by remember { mutableStateOf(false) }
+    var showRenameFileDialog by remember { mutableStateOf(false) }
+    var fileToRename by remember { mutableStateOf<NextcloudFile?>(null) }
+    var showAddFilesOptionDialog by remember { mutableStateOf(false) }
     var showAddNoteDialog by remember { mutableStateOf(false) }
     var editingNote by remember { mutableStateOf<NextcloudNote?>(null) }
     var viewingNote by remember { mutableStateOf<NextcloudNote?>(null) }
@@ -196,6 +205,35 @@ fun NextcloudHubApp() {
                 } else {
                     isLoading = false
                 }
+            }
+        }
+    }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bytes = inputStream?.readBytes()
+                inputStream?.close()
+                
+                val fileName = getFileNameFromUri(context, uri) ?: "upload_${System.currentTimeMillis()}"
+                
+                if (bytes != null) {
+                    isLoading = true
+                    client?.uploadFile(currentFolderPath, fileName, bytes,
+                        onSuccess = {
+                            refreshData()
+                        },
+                        onFailure = { err ->
+                            errorMessage = "Import échoué: ${err.message}"
+                            isLoading = false
+                        }
+                    )
+                }
+            } catch (e: Exception) {
+                errorMessage = "Erreur lecture fichier: ${e.message}"
             }
         }
     }
@@ -307,11 +345,11 @@ fun NextcloudHubApp() {
                     }
                     HubTab.FILES -> {
                         FloatingActionButton(
-                            onClick = { showAddFolderDialog = true },
+                            onClick = { showAddFilesOptionDialog = true },
                             containerColor = Color(0xFF0082C9),
                             contentColor = Color.White
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = "Créer dossier")
+                            Icon(Icons.Default.Add, contentDescription = "Ajouter élément")
                         }
                     }
                     HubTab.CALENDAR -> {
@@ -489,7 +527,10 @@ fun NextcloudHubApp() {
                                         isLoading = false
                                     }
                                 )
-                            }
+                            },
+                            onCreateList = { showCreateTaskListDialog = true },
+                            onRenameList = { showRenameTaskListDialog = true },
+                            onDeleteList = { showDeleteTaskListDialog = true }
                         )
                     }
                     HubTab.NOTES -> {
@@ -542,6 +583,10 @@ fun NextcloudHubApp() {
                                         isLoading = false
                                     }
                                 )
+                            },
+                            onRenameFile = { file ->
+                                fileToRename = file
+                                showRenameFileDialog = true
                             }
                         )
                     }
@@ -600,6 +645,53 @@ fun NextcloudHubApp() {
             },
             dismissButton = {
                 TextButton(onClick = { showAddFolderDialog = false }) {
+                    Text("Annuler")
+                }
+            }
+        )
+    }
+
+    // Add Files / Options Dialog
+    if (showAddFilesOptionDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddFilesOptionDialog = false },
+            title = { Text("Ajouter au Drive", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Button(
+                        onClick = {
+                            showAddFilesOptionDialog = false
+                            showAddFolderDialog = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0082C9)),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Folder, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Créer un dossier", color = Color.White)
+                    }
+                    Button(
+                        onClick = {
+                            showAddFilesOptionDialog = false
+                            filePickerLauncher.launch("*/*")
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0082C9)),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Publish, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Importer un fichier", color = Color.White)
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showAddFilesOptionDialog = false }) {
                     Text("Annuler")
                 }
             }
@@ -747,6 +839,207 @@ fun NextcloudHubApp() {
             },
             dismissButton = {
                 TextButton(onClick = { showAddEventDialog = false }) {
+                    Text("Annuler")
+                }
+            }
+        )
+    }
+
+    // Task List Creation Dialog
+    if (showCreateTaskListDialog) {
+        var listName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showCreateTaskListDialog = false },
+            title = { Text("Nouvelle liste de tâches", fontWeight = FontWeight.Bold) },
+            text = {
+                OutlinedTextField(
+                    value = listName,
+                    onValueChange = { listName = it },
+                    label = { Text("Nom de la liste") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (listName.isNotEmpty()) {
+                            showCreateTaskListDialog = false
+                            isLoading = true
+                            client?.createTaskList(listName,
+                                onSuccess = {
+                                    client?.getCalendars(
+                                        onSuccess = { calList ->
+                                            calendars = calList
+                                            isLoading = false
+                                        },
+                                        onFailure = { err ->
+                                            errorMessage = err.message
+                                            isLoading = false
+                                        }
+                                    )
+                                },
+                                onFailure = { err ->
+                                    errorMessage = "Création de liste échouée: ${err.message}"
+                                    isLoading = false
+                                }
+                            )
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0082C9))
+                ) {
+                    Text("Créer", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateTaskListDialog = false }) {
+                    Text("Annuler")
+                }
+            }
+        )
+    }
+
+    // Task List Rename Dialog
+    if (showRenameTaskListDialog) {
+        var newListName by remember { mutableStateOf(selectedTaskListName) }
+        AlertDialog(
+            onDismissRequest = { showRenameTaskListDialog = false },
+            title = { Text("Renommer la liste", fontWeight = FontWeight.Bold) },
+            text = {
+                OutlinedTextField(
+                    value = newListName,
+                    onValueChange = { newListName = it },
+                    label = { Text("Nouveau nom") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newListName.isNotEmpty() && selectedTaskListHref.isNotEmpty()) {
+                            showRenameTaskListDialog = false
+                            isLoading = true
+                            client?.renameTaskList(selectedTaskListHref, newListName,
+                                onSuccess = {
+                                    selectedTaskListName = newListName
+                                    client?.getCalendars(
+                                        onSuccess = { calList ->
+                                            calendars = calList
+                                            isLoading = false
+                                        },
+                                        onFailure = { err ->
+                                            errorMessage = err.message
+                                            isLoading = false
+                                        }
+                                    )
+                                },
+                                onFailure = { err ->
+                                    errorMessage = "Renommer liste échoué: ${err.message}"
+                                    isLoading = false
+                                }
+                            )
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0082C9))
+                ) {
+                    Text("Renommer", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameTaskListDialog = false }) {
+                    Text("Annuler")
+                }
+            }
+        )
+    }
+
+    // Task List Delete Dialog
+    if (showDeleteTaskListDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteTaskListDialog = false },
+            title = { Text("Supprimer la liste ?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Voulez-vous vraiment supprimer la liste '$selectedTaskListName' et toutes ses tâches ? Cette action est irréversible.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (selectedTaskListHref.isNotEmpty()) {
+                            showDeleteTaskListDialog = false
+                            isLoading = true
+                            client?.deleteTaskList(selectedTaskListHref,
+                                onSuccess = {
+                                    selectedTaskListHref = ""
+                                    selectedTaskListName = ""
+                                    tasks = emptyList()
+                                    client?.getCalendars(
+                                        onSuccess = { calList ->
+                                            calendars = calList
+                                            isLoading = false
+                                        },
+                                        onFailure = { err ->
+                                            errorMessage = err.message
+                                            isLoading = false
+                                        }
+                                    )
+                                },
+                                onFailure = { err ->
+                                    errorMessage = "Suppression de liste échouée: ${err.message}"
+                                    isLoading = false
+                                }
+                            )
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
+                ) {
+                    Text("Supprimer", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteTaskListDialog = false }) {
+                    Text("Annuler")
+                }
+            }
+        )
+    }
+
+    // File Rename Dialog
+    if (showRenameFileDialog && fileToRename != null) {
+        var newFileName by remember { mutableStateOf(fileToRename!!.name) }
+        AlertDialog(
+            onDismissRequest = { showRenameFileDialog = false },
+            title = { Text("Renommer", fontWeight = FontWeight.Bold) },
+            text = {
+                OutlinedTextField(
+                    value = newFileName,
+                    onValueChange = { newFileName = it },
+                    label = { Text("Nouveau nom") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newFileName.isNotEmpty() && newFileName != fileToRename!!.name) {
+                            showRenameFileDialog = false
+                            isLoading = true
+                            client?.renameFile(fileToRename!!.path, newFileName,
+                                onSuccess = {
+                                    refreshData()
+                                },
+                                onFailure = { err ->
+                                    errorMessage = "Renommage échoué: ${err.message}"
+                                    isLoading = false
+                                }
+                            )
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0082C9))
+                ) {
+                    Text("Renommer", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameFileDialog = false }) {
                     Text("Annuler")
                 }
             }
@@ -1513,7 +1806,10 @@ fun TasksScreen(
     tasks: List<NextcloudTask>,
     onTaskListSelected: (String, String) -> Unit,
     onToggleStatus: (NextcloudTask) -> Unit,
-    onDeleteTask: (NextcloudTask) -> Unit
+    onDeleteTask: (NextcloudTask) -> Unit,
+    onCreateList: () -> Unit,
+    onRenameList: () -> Unit,
+    onDeleteList: () -> Unit
 ) {
     var dropdownExpanded by remember { mutableStateOf(false) }
 
@@ -1527,7 +1823,7 @@ fun TasksScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 16.dp)
+                    .padding(bottom = 12.dp)
                     .clickable { dropdownExpanded = true },
                 shape = RoundedCornerShape(8.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White)
@@ -1556,6 +1852,47 @@ fun TasksScreen(
                             onTaskListSelected(list.first, list.second)
                         }
                     )
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                onClick = onCreateList,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0082C9)),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Ajouter", fontSize = 12.sp, maxLines = 1)
+            }
+            if (selectedName.isNotEmpty()) {
+                Button(
+                    onClick = onRenameList,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEAA000)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Renommer", fontSize = 12.sp, maxLines = 1)
+                }
+                Button(
+                    onClick = onDeleteList,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Supprimer", fontSize = 12.sp, maxLines = 1)
                 }
             }
         }
@@ -1797,7 +2134,8 @@ fun FilesScreen(
     files: List<NextcloudFile>,
     onFileClick: (NextcloudFile) -> Unit,
     onBackClick: () -> Unit,
-    onDeleteFile: (NextcloudFile) -> Unit
+    onDeleteFile: (NextcloudFile) -> Unit,
+    onRenameFile: (NextcloudFile) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -1852,6 +2190,7 @@ fun FilesScreen(
                     FileItem(
                         file = file,
                         onClick = { onFileClick(file) },
+                        onRename = { onRenameFile(file) },
                         onDelete = { onDeleteFile(file) }
                     )
                 }
@@ -1864,6 +2203,7 @@ fun FilesScreen(
 fun FileItem(
     file: NextcloudFile,
     onClick: () -> Unit,
+    onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
@@ -1886,7 +2226,12 @@ fun FileItem(
                     .background(if (file.isDirectory) Color(0xFFE3F2FD) else Color(0xFFF5F5F5), RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(if (file.isDirectory) "📁" else "📄", fontSize = 22.sp)
+                Icon(
+                    imageVector = if (file.isDirectory) Icons.Default.Folder else Icons.Default.Description,
+                    contentDescription = null,
+                    tint = if (file.isDirectory) Color(0xFF0082C9) else Color.Gray,
+                    modifier = Modifier.size(24.dp)
+                )
             }
             
             Spacer(modifier = Modifier.width(16.dp))
@@ -1924,6 +2269,14 @@ fun FileItem(
                 }
             }
             
+            IconButton(onClick = onRename) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Renommer",
+                    tint = Color.Gray
+                )
+            }
+
             IconButton(onClick = onDelete) {
                 Icon(
                     imageVector = Icons.Default.Delete,
@@ -1933,4 +2286,25 @@ fun FileItem(
             }
         }
     }
+}
+
+private fun getFileNameFromUri(context: android.content.Context, uri: Uri): String? {
+    var name: String? = null
+    val cursor = context.contentResolver.query(uri, null, null, null, null)
+    cursor?.use {
+        if (it.moveToFirst()) {
+            val index = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (index != -1) {
+                name = it.getString(index)
+            }
+        }
+    }
+    if (name == null) {
+        name = uri.path
+        val cut = name?.lastIndexOf('/') ?: -1
+        if (cut != -1) {
+            name = name?.substring(cut + 1)
+        }
+    }
+    return name
 }
