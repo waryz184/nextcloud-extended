@@ -207,6 +207,76 @@ class CalDavClient(
         })
     }
 
+    // Save (Create or Update) a CalendarEvent via PUT
+    fun saveEvent(calendarHref: String, event: CalendarEvent, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
+        val rootUrl = if (baseUrl.endsWith("/")) baseUrl.substring(0, baseUrl.length - 1) else baseUrl
+        val fileUrl = if (calendarHref.endsWith("/")) "$rootUrl$calendarHref${event.id}.ics"
+                      else "$rootUrl$calendarHref/${event.id}.ics"
+
+        val cleanSummary = event.summary.replace("\n", " ").replace("\r", "")
+        val cleanDescription = event.description?.replace("\n", "\\n")?.replace("\r", "")
+        val cleanLocation = event.location?.replace("\n", " ")?.replace("\r", "")
+
+        val startIcs = formatToIcsDate(event.startTime)
+        val endIcs = formatToIcsDate(event.endTime)
+
+        val icsBody = """
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            PRODID:-//Hermes Agent//Nextcloud Calendar//EN
+            BEGIN:VEVENT
+            UID:${event.id}
+            SUMMARY:$cleanSummary
+            ${if (cleanDescription != null) "DESCRIPTION:$cleanDescription" else ""}
+            ${if (cleanLocation != null) "LOCATION:$cleanLocation" else ""}
+            ${if (startIcs != null) "DTSTART:$startIcs" else ""}
+            ${if (endIcs != null) "DTEND:$endIcs" else ""}
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent()
+
+        val request = Request.Builder()
+            .url(fileUrl)
+            .addHeader("Authorization", credentials)
+            .addHeader("Content-Type", "text/calendar; charset=utf-8")
+            .put(icsBody.trim().toRequestBody("text/calendar; charset=utf-8".toMediaType()))
+            .build()
+
+        client.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                runOnMain { onFailure(e) }
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                if (response.isSuccessful || response.code == 201 || response.code == 204) {
+                    runOnMain { onSuccess() }
+                } else {
+                    runOnMain { onFailure(Exception("HTTP Error: ${response.code}")) }
+                }
+            }
+        })
+    }
+
+    private fun formatToIcsDate(dateTimeStr: String?): String? {
+        if (dateTimeStr == null) return null
+        val clean = dateTimeStr.trim()
+        if (clean.length == 16 && clean[4] == '-' && clean[7] == '-' && clean[10] == ' ' && clean[13] == ':') {
+            val year = clean.substring(0, 4)
+            val month = clean.substring(5, 7)
+            val day = clean.substring(8, 10)
+            val hour = clean.substring(11, 13)
+            val minute = clean.substring(14, 16)
+            return "${year}${month}${day}T${hour}${minute}00Z"
+        }
+        if (clean.length == 10 && clean[4] == '-' && clean[7] == '-') {
+            val year = clean.substring(0, 4)
+            val month = clean.substring(5, 7)
+            val day = clean.substring(8, 10)
+            return "${year}${month}${day}"
+        }
+        return clean.replace("-", "").replace(":", "").replace(" ", "T")
+    }
+
     // Delete a NextcloudTask
     fun deleteTask(task: NextcloudTask, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
         val rootUrl = if (baseUrl.endsWith("/")) baseUrl.substring(0, baseUrl.length - 1) else baseUrl

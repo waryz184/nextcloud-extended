@@ -122,6 +122,7 @@ fun NextcloudHubApp() {
 
     // Dialog States
     var showAddTaskDialog by remember { mutableStateOf(false) }
+    var showAddEventDialog by remember { mutableStateOf(false) }
     var showAddNoteDialog by remember { mutableStateOf(false) }
     var editingNote by remember { mutableStateOf<NextcloudNote?>(null) }
     var viewingNote by remember { mutableStateOf<NextcloudNote?>(null) }
@@ -311,6 +312,15 @@ fun NextcloudHubApp() {
                             contentColor = Color.White
                         ) {
                             Icon(Icons.Default.Add, contentDescription = "Créer dossier")
+                        }
+                    }
+                    HubTab.CALENDAR -> {
+                        FloatingActionButton(
+                            onClick = { showAddEventDialog = true },
+                            containerColor = Color(0xFF0082C9),
+                            contentColor = Color.White
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Ajouter événement")
                         }
                     }
                     else -> {}
@@ -652,6 +662,91 @@ fun NextcloudHubApp() {
             },
             dismissButton = {
                 TextButton(onClick = { showAddTaskDialog = false }) {
+                    Text("Annuler")
+                }
+            }
+        )
+    }
+
+    // Event Creation Dialog
+    if (showAddEventDialog) {
+        var eventTitle by remember { mutableStateOf("") }
+        var eventDesc by remember { mutableStateOf("") }
+        var eventLoc by remember { mutableStateOf("") }
+        var eventStart by remember { mutableStateOf(selectedDate.toString() + " 10:00") }
+        var eventEnd by remember { mutableStateOf(selectedDate.toString() + " 11:00") }
+        
+        AlertDialog(
+            onDismissRequest = { showAddEventDialog = false },
+            title = { Text("Nouvel événement", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    OutlinedTextField(
+                        value = eventTitle,
+                        onValueChange = { eventTitle = it },
+                        label = { Text("Titre de l'événement") },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                    )
+                    OutlinedTextField(
+                        value = eventDesc,
+                        onValueChange = { eventDesc = it },
+                        label = { Text("Description") },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                    )
+                    OutlinedTextField(
+                        value = eventLoc,
+                        onValueChange = { eventLoc = it },
+                        label = { Text("Lieu") },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                    )
+                    OutlinedTextField(
+                        value = eventStart,
+                        onValueChange = { eventStart = it },
+                        label = { Text("Début (AAAA-MM-JJ HH:MM)") },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                    )
+                    OutlinedTextField(
+                        value = eventEnd,
+                        onValueChange = { eventEnd = it },
+                        label = { Text("Fin (AAAA-MM-JJ HH:MM)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (eventTitle.isNotEmpty() && selectedCalendarHref.isNotEmpty()) {
+                            showAddEventDialog = false
+                            isLoading = true
+                            val newEvent = CalendarEvent(
+                                id = UUID.randomUUID().toString(),
+                                summary = eventTitle,
+                                description = if (eventDesc.isEmpty()) null else eventDesc,
+                                startTime = eventStart,
+                                endTime = eventEnd,
+                                location = if (eventLoc.isEmpty()) null else eventLoc
+                            )
+                            client?.saveEvent(selectedCalendarHref, newEvent,
+                                onSuccess = {
+                                    refreshData()
+                                },
+                                onFailure = { err ->
+                                    errorMessage = "Création d'événement échouée: ${err.message}"
+                                    isLoading = false
+                                }
+                            )
+                        } else if (selectedCalendarHref.isEmpty()) {
+                            errorMessage = "Veuillez sélectionner un calendrier d'abord"
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0082C9))
+                ) {
+                    Text("Ajouter", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddEventDialog = false }) {
                     Text("Annuler")
                 }
             }
