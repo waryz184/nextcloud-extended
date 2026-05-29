@@ -68,11 +68,13 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     var serverUrl by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var allowInsecureHttp by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         serverUrl = sharedPrefs.getString("server_url", "") ?: ""
         username = sharedPrefs.getString("username", "") ?: ""
         password = sharedPrefs.getString("password", "") ?: ""
+        allowInsecureHttp = sharedPrefs.getBoolean("allow_insecure_http", false)
     }
 
     // UI-only state (dialogs, transient selections)
@@ -204,18 +206,26 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                 LoginScreen(
                     serverUrl = serverUrl, username = username, password = password,
                     isLoading = vm.isLoading,
+                    allowInsecureHttp = allowInsecureHttp,
                     onServerUrlChange = { serverUrl = it },
                     onUsernameChange = { username = it },
                     onPasswordChange = { password = it },
+                    onAllowInsecureHttpChange = { allowInsecureHttp = it },
                     onConnect = {
                         if (serverUrl.isEmpty() || username.isEmpty() || password.isEmpty()) {
                             vm.errorMessage = "Veuillez remplir tous les champs"; return@LoginScreen
+                        }
+                        // HTTPS enforced by default — block http:// unless explicitly allowed
+                        if (serverUrl.startsWith("http://") && !allowInsecureHttp) {
+                            vm.errorMessage = "Connexion HTTP non sécurisée bloquée. Activez l'option dans « Options avancées » si votre serveur est sur un réseau local."
+                            return@LoginScreen
                         }
                         vm.connect(serverUrl, username, password) {
                             sharedPrefs.edit()
                                 .putString("server_url", serverUrl)
                                 .putString("username", username)
                                 .putString("password", password)
+                                .putBoolean("allow_insecure_http", allowInsecureHttp)
                                 .apply()
                         }
                     }

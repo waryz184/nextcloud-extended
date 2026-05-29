@@ -121,9 +121,6 @@ class NextcloudViewModel : ViewModel() {
         serverUrl: String, username: String, password: String,
         onSaveCredentials: () -> Unit
     ) {
-        if (serverUrl.startsWith("http://")) {
-            errorMessage = "Attention : connexion non sécurisée (HTTP). Préférez HTTPS."
-        }
         loadingCount++
         val c = CalDavClient(serverUrl, username, password)
         client = c

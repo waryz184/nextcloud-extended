@@ -19,5 +19,12 @@ Thumbs.db
 
 # Built artifacts
 *.apk
+*.aab
 *.aar
 *.jar
+*.idsig
+
+# Signing — NEVER commit these
+*.jks
+*.keystore
+keystore.properties
