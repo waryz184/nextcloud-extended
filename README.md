@@ -1,64 +1,103 @@
-# Nextcloud Extended 📱🚀
+# Nextcloud Extended
 
-**Nextcloud Extended** is a modern, high-performance, and native Android application designed to turn your self-hosted Nextcloud server into a powerful, unified productivity workspace on your phone.
+A native Android client for self-hosted Nextcloud servers. It brings your **calendar, tasks,
+notes and files** together in a single app, built with **Kotlin** and **Jetpack Compose**
+(Material 3). It talks directly to standard Nextcloud protocols — CalDAV, WebDAV and the Notes
+API — so there is no backend in between: your data only ever travels between your device and your
+own server.
 
-Built completely from scratch using **Kotlin** and **Jetpack Compose**, this application integrates seamlessly with standard Nextcloud protocols and official APIs to deliver a blazing-fast, beautiful, and fluid Material 3 user experience.
-
----
-
-## 🌟 Key Features
-
-### 📅 1. Calendar / Agenda (CalDAV)
-* Fully native calendar engine supporting year, month, and day views.
-* Interactive agenda lists that fetch and parse `.ics` payloads dynamically.
-* Fluid navigation and seamless representation of events directly from your Nextcloud calendar collections.
-
-### 📋 2. Tasks / Todos (CalDAV)
-* Fully-fledged integration with the Nextcloud Tasks application via CalDAV.
-* Create, update, view, and toggle completion statuses of your lists and tasks in real-time.
-* Native rendering of lists and checklists with a responsive Material Design.
-
-### 📝 3. Notes (REST API)
-* Native integration with the official Nextcloud Notes API.
-* Real-time notes creation, updates, and lightning-fast full-text searches.
-* Text manipulation and rich local viewing of your markdown-based cloud notes.
-
-### 📁 4. Drive / Cloud Storage (WebDAV)
-* A beautiful, interactive file explorer for your entire Nextcloud storage.
-* Navigate folders recursively (with breadcrumbs or quick-back navigation).
-* Create new subfolders instantly (via `MKCOL` requests).
-* Delete files or folders securely from your server.
-* Visual indicators including dynamic file sizes (formatted to KB/MB) and modification timestamps.
+The app is **bilingual (English / French)**: pick your language on the login screen, or let it
+follow your device locale on first launch.
 
 ---
 
-## 🛠️ Architecture & Technologies
+## Features
 
-* **Language**: Native Kotlin 1.9+
-* **UI Toolkit**: Jetpack Compose (Declarative UI) with Material Design 3
-* **Network & HTTP**: OkHttpClient (custom implementation of CalDAV, WebDAV, and JSON REST APIs)
-* **XML Parsing**: Native XmlPullParser for lightweight, dependency-free processing of WebDAV multi-status XML payloads.
-* **Build System**: Gradle 8.5 with Kotlin DSL
+### 📅 Calendar (CalDAV)
+- Day, week, month and year views.
+- Multiple calendars with their server-defined colours, toggled on/off individually.
+- Create, edit and delete events; tap an event for a detail sheet with time, location and notes.
+
+### ✅ Tasks (CalDAV)
+- Browse, create, rename and delete task lists.
+- Create, edit, complete and delete tasks, with optional due dates (date picker).
+- Search within a list.
+
+### 📝 Notes (Notes API)
+- Create, edit and delete notes with categories and favourites.
+- Markdown rendering for viewing.
+- Full-text search.
+
+### 📁 Files (WebDAV)
+- Browse your storage with folder navigation.
+- Upload, download, rename and delete files; create folders.
+- Generate public share links and open files in other apps.
+- Search within the current folder.
 
 ---
 
-## 📦 How to Build and Run
+## Privacy & Security
 
-To compile the application headless or in Android Studio:
+- **No data collection** — no analytics, no telemetry, no third-party SDKs, no backend of ours.
+- Credentials are stored **encrypted on-device** (`EncryptedSharedPreferences`, AES-256).
+- **HTTPS is enforced by default.** Plain HTTP is an opt-in in the advanced options, intended only
+  for a server on a trusted local network.
+- A single permission is requested: Internet.
+
+See [PRIVACY.md](PRIVACY.md) for the full policy.
+
+---
+
+## Getting started
+
+Install the latest signed APK from the [Releases](https://github.com/waryz184/nextcloud-extended/releases)
+page. A Google Play Store release is planned.
+
+On first launch, enter your **server URL**, **username** and **password**. Using a dedicated
+[Nextcloud app password](https://docs.nextcloud.com/server/latest/user_manual/en/session_management.html#managing-devices)
+is recommended rather than your main account password.
+
+---
+
+## Architecture & Tech
+
+- **Language:** Kotlin (JVM 17)
+- **UI:** Jetpack Compose, Material 3
+- **Networking:** OkHttp — custom CalDAV / WebDAV / JSON clients
+- **Parsing:** native `XmlPullParser` for WebDAV multi-status responses; lightweight in-app Markdown rendering
+- **Min SDK:** 26 (Android 8.0) · **Target SDK:** 35
+
+---
+
+## Building from source
 
 ### Prerequisites
-* JDK 17
-* Android SDK (API 26+)
+- JDK 17
+- Android SDK (API 26+)
 
-### From Command Line (Gradle)
+### Debug build
 ```bash
 ./gradlew assembleDebug
 ```
-The compiled, debuggable APK will be generated at:
-`app/build/outputs/apk/debug/app-debug.apk`
+Output: `app/build/outputs/apk/debug/app-debug.apk`
+
+### Release build
+Release builds are minified (R8) and signed from a `keystore.properties` file at the project root
+(gitignored, not included). Without it, the release build runs unsigned. Build with:
+```bash
+./gradlew assembleRelease
+```
 
 ---
 
-## 👥 Authors & Contribution
+## Authors
 
 Created and maintained with ❤️ by **waryz184** and **Hermes AI**.
+
+---
+
+## License
+
+Licensed under the **Apache License 2.0**. See [LICENSE](LICENSE).
+
+Copyright © 2026 Luna (lun-a.xyz)
