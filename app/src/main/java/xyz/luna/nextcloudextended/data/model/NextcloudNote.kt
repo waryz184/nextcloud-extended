@@ -1,4 +1,4 @@
-package com.example.nextcloudcalendar.data.model
+package xyz.luna.nextcloudextended.data.model
 
 data class NextcloudNote(
     val id: Int,

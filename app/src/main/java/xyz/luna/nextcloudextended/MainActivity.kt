@@ -1,7 +1,10 @@
-package com.example.nextcloudcalendar
+package xyz.luna.nextcloudextended
 
 import android.os.Bundle
 import android.net.Uri
+import android.app.DownloadManager
+import android.content.Context
+import android.os.Environment
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.security.crypto.EncryptedSharedPreferences
@@ -21,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -32,11 +36,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.platform.LocalContext
-import com.example.nextcloudcalendar.data.model.CalendarEvent
-import com.example.nextcloudcalendar.data.model.NextcloudTask
-import com.example.nextcloudcalendar.data.model.NextcloudNote
-import com.example.nextcloudcalendar.data.model.NextcloudFile
-import com.example.nextcloudcalendar.data.network.CalDavClient
+import xyz.luna.nextcloudextended.data.model.CalendarEvent
+import xyz.luna.nextcloudextended.data.model.NextcloudTask
+import xyz.luna.nextcloudextended.data.model.NextcloudNote
+import xyz.luna.nextcloudextended.data.model.NextcloudFile
+import xyz.luna.nextcloudextended.data.network.CalDavClient
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.DayOfWeek
@@ -83,7 +87,8 @@ fun NextcloudHubApp() {
     }
 
     var isConnected by remember { mutableStateOf(false) }
-    var isLoading by remember { mutableStateOf(false) }
+    var loadingCount by remember { mutableIntStateOf(0) }
+    val isLoading = loadingCount > 0
     
     // Credentials (initialized empty to protect secrets, loaded from SharedPreferences)
     var serverUrl by remember { mutableStateOf("") }
@@ -102,6 +107,7 @@ fun NextcloudHubApp() {
     
     // Calendar States
     var calendars by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var taskLists by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var selectedCalendarHref by remember { mutableStateOf("") }
     var selectedCalendarName by remember { mutableStateOf("") }
     var events by remember { mutableStateOf<List<CalendarEvent>>(emptyList()) }
@@ -141,22 +147,22 @@ fun NextcloudHubApp() {
 
     fun refreshData() {
         val c = client ?: return
-        isLoading = true
+        loadingCount++
         when (currentTab) {
             HubTab.CALENDAR -> {
                 if (selectedCalendarHref.isNotEmpty()) {
                     c.getEvents(selectedCalendarHref,
                         onSuccess = { evList ->
                             events = evList.sortedBy { it.startTime ?: "" }
-                            isLoading = false
+                            if (loadingCount > 0) loadingCount--
                         },
                         onFailure = { err ->
                             errorMessage = "Erreur calendrier: ${err.message}"
-                            isLoading = false
+                            if (loadingCount > 0) loadingCount--
                         }
                     )
                 } else {
-                    isLoading = false
+                    if (loadingCount > 0) loadingCount--
                 }
             }
             HubTab.TASKS -> {
@@ -164,26 +170,26 @@ fun NextcloudHubApp() {
                     c.getTasks(selectedTaskListHref,
                         onSuccess = { tList ->
                             tasks = tList.sortedWith(compareBy({ it.status == "COMPLETED" }, { it.due ?: "" }))
-                            isLoading = false
+                            if (loadingCount > 0) loadingCount--
                         },
                         onFailure = { err ->
                             errorMessage = "Erreur tâches: ${err.message}"
-                            isLoading = false
+                            if (loadingCount > 0) loadingCount--
                         }
                     )
                 } else {
-                    isLoading = false
+                    if (loadingCount > 0) loadingCount--
                 }
             }
             HubTab.NOTES -> {
                 c.getNotes(
                     onSuccess = { nList ->
                         notes = nList.sortedWith(compareByDescending<NextcloudNote> { it.favorite }.thenByDescending { it.modified })
-                        isLoading = false
+                        if (loadingCount > 0) loadingCount--
                     },
                     onFailure = { err ->
                         errorMessage = "Erreur notes: ${err.message}"
-                        isLoading = false
+                        if (loadingCount > 0) loadingCount--
                     }
                 )
             }
@@ -195,18 +201,24 @@ fun NextcloudHubApp() {
                     c.getFiles(currentFolderPath,
                         onSuccess = { fList ->
                             files = fList.sortedWith(compareByDescending<NextcloudFile> { it.isDirectory }.thenBy { it.name.lowercase() })
-                            isLoading = false
+                            if (loadingCount > 0) loadingCount--
                         },
                         onFailure = { err ->
                             errorMessage = "Erreur fichiers: ${err.message}"
-                            isLoading = false
+                            if (loadingCount > 0) loadingCount--
                         }
                     )
                 } else {
-                    isLoading = false
+                    if (loadingCount > 0) loadingCount--
                 }
             }
         }
+    }
+
+    // Termine une opération courante ET lance un refresh — utiliser dans onSuccess qui chain sur refreshData
+    val refreshAndStop: () -> Unit = {
+        refreshData()
+        if (loadingCount > 0) loadingCount--
     }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -221,14 +233,12 @@ fun NextcloudHubApp() {
                 val fileName = getFileNameFromUri(context, uri) ?: "upload_${System.currentTimeMillis()}"
                 
                 if (bytes != null) {
-                    isLoading = true
+                    loadingCount++
                     client?.uploadFile(currentFolderPath, fileName, bytes,
-                        onSuccess = {
-                            refreshData()
-                        },
+                        onSuccess = refreshAndStop,
                         onFailure = { err ->
                             errorMessage = "Import échoué: ${err.message}"
-                            isLoading = false
+                            if (loadingCount > 0) loadingCount--
                         }
                     )
                 }
@@ -361,7 +371,6 @@ fun NextcloudHubApp() {
                             Icon(Icons.Default.Add, contentDescription = "Ajouter événement")
                         }
                     }
-                    else -> {}
                 }
             }
         }
@@ -413,37 +422,44 @@ fun NextcloudHubApp() {
                                 errorMessage = "Veuillez remplir tous les champs"
                                 return@Button
                             }
-                            isLoading = true
+                            if (serverUrl.startsWith("http://")) {
+                                errorMessage = "Attention : connexion non sécurisée (HTTP). Préférez HTTPS."
+                            }
+                            loadingCount++
                             errorMessage = null
                             val c = CalDavClient(serverUrl, username, password)
                             client = c
-                            c.getCalendars(
-                                onSuccess = { calList ->
-                                    // Save credentials to SharedPreferences
+                            c.getAllCalendarData(
+                                onSuccess = { eventCals, taskListData ->
                                     sharedPrefs.edit()
                                         .putString("server_url", serverUrl)
                                         .putString("username", username)
                                         .putString("password", password)
                                         .apply()
 
-                                    calendars = calList
+                                    calendars = eventCals
+                                    taskLists = taskListData
                                     isConnected = true
-                                    
-                                    if (calList.isNotEmpty()) {
-                                        selectedCalendarHref = calList[0].first
-                                        selectedCalendarName = calList[0].second
-                                        
-                                        val todoListObj = calList.find { it.second.lowercase().contains("todo") || it.first.lowercase().contains("todo") }
-                                            ?: calList[0]
+
+                                    if (eventCals.isNotEmpty()) {
+                                        selectedCalendarHref = eventCals[0].first
+                                        selectedCalendarName = eventCals[0].second
+                                    }
+
+                                    if (taskListData.isNotEmpty()) {
+                                        val todoListObj = taskListData.find {
+                                            it.second.lowercase().contains("todo") || it.first.lowercase().contains("todo")
+                                        } ?: taskListData[0]
                                         selectedTaskListHref = todoListObj.first
                                         selectedTaskListName = todoListObj.second
                                     }
-                                    
+
                                     refreshData()
+                                    if (loadingCount > 0) loadingCount--
                                 },
                                 onFailure = { err ->
                                     errorMessage = "Connexion échouée: ${err.message}"
-                                    isLoading = false
+                                    if (loadingCount > 0) loadingCount--
                                 }
                             )
                         },
@@ -468,15 +484,15 @@ fun NextcloudHubApp() {
                             onCalendarSelected = { href, name ->
                                 selectedCalendarHref = href
                                 selectedCalendarName = name
-                                isLoading = true
+                                loadingCount++
                                 client?.getEvents(href,
                                     onSuccess = { evList ->
                                         events = evList.sortedBy { it.startTime ?: "" }
-                                        isLoading = false
+                                        if (loadingCount > 0) loadingCount--
                                     },
                                     onFailure = { err ->
                                         errorMessage = err.message
-                                        isLoading = false
+                                        if (loadingCount > 0) loadingCount--
                                     }
                                 )
                             }
@@ -484,47 +500,43 @@ fun NextcloudHubApp() {
                     }
                     HubTab.TASKS -> {
                         TasksScreen(
-                            taskLists = calendars,
+                            taskLists = taskLists,
                             selectedName = selectedTaskListName,
                             tasks = tasks,
                             onTaskListSelected = { href, name ->
                                 selectedTaskListHref = href
                                 selectedTaskListName = name
-                                isLoading = true
+                                loadingCount++
                                 client?.getTasks(href,
                                     onSuccess = { tList ->
                                         tasks = tList.sortedWith(compareBy({ it.status == "COMPLETED" }, { it.due ?: "" }))
-                                        isLoading = false
+                                        if (loadingCount > 0) loadingCount--
                                     },
                                     onFailure = { err ->
                                         errorMessage = err.message
-                                        isLoading = false
+                                        if (loadingCount > 0) loadingCount--
                                     }
                                 )
                             },
                             onToggleStatus = { task ->
                                 val updatedStatus = if (task.status == "COMPLETED") "NEEDS-ACTION" else "COMPLETED"
                                 val updatedTask = task.copy(status = updatedStatus)
-                                isLoading = true
+                                loadingCount++
                                 client?.saveTask(updatedTask,
-                                    onSuccess = {
-                                        refreshData()
-                                    },
+                                    onSuccess = refreshAndStop,
                                     onFailure = { err ->
                                         errorMessage = "Échec mise à jour tâche: ${err.message}"
-                                        isLoading = false
+                                        if (loadingCount > 0) loadingCount--
                                     }
                                 )
                             },
                             onDeleteTask = { task ->
-                                isLoading = true
+                                loadingCount++
                                 client?.deleteTask(task,
-                                    onSuccess = {
-                                        refreshData()
-                                    },
+                                    onSuccess = refreshAndStop,
                                     onFailure = { err ->
                                         errorMessage = "Échec suppression tâche: ${err.message}"
-                                        isLoading = false
+                                        if (loadingCount > 0) loadingCount--
                                     }
                                 )
                             },
@@ -538,14 +550,12 @@ fun NextcloudHubApp() {
                             notes = notes,
                             onNoteSelected = { viewingNote = it },
                             onToggleFavorite = { note ->
-                                isLoading = true
+                                loadingCount++
                                 client?.updateNote(note.id, note.title, note.content, note.category, !note.favorite,
-                                    onSuccess = {
-                                        refreshData()
-                                    },
+                                    onSuccess = refreshAndStop,
                                     onFailure = { err ->
                                         errorMessage = "Échec favori note: ${err.message}"
-                                        isLoading = false
+                                        if (loadingCount > 0) loadingCount--
                                     }
                                 )
                             }
@@ -560,7 +570,19 @@ fun NextcloudHubApp() {
                                     currentFolderPath = file.path
                                     refreshData()
                                 } else {
-                                    Toast.makeText(context, "Téléchargement de ${file.name}...", Toast.LENGTH_SHORT).show()
+                                    val fileUrl = client?.buildFileUrl(file.path)
+                                    val auth = client?.getAuthorizationHeader()
+                                    if (fileUrl != null && auth != null) {
+                                        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                        val req = DownloadManager.Request(android.net.Uri.parse(fileUrl))
+                                            .addRequestHeader("Authorization", auth)
+                                            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, file.name)
+                                            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                            .setTitle(file.name)
+                                            .setDescription("Nextcloud Extended")
+                                        dm.enqueue(req)
+                                        Toast.makeText(context, "Téléchargement de ${file.name} démarré", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
                             },
                             onBackClick = {
@@ -573,14 +595,12 @@ fun NextcloudHubApp() {
                                 }
                             },
                             onDeleteFile = { file ->
-                                isLoading = true
+                                loadingCount++
                                 client?.deleteFile(file.path,
-                                    onSuccess = {
-                                        refreshData()
-                                    },
+                                    onSuccess = refreshAndStop,
                                     onFailure = { err ->
                                         errorMessage = "Échec suppression: ${err.message}"
-                                        isLoading = false
+                                        if (loadingCount > 0) loadingCount--
                                     }
                                 )
                             },
@@ -626,14 +646,12 @@ fun NextcloudHubApp() {
                     onClick = {
                         if (folderName.isNotEmpty()) {
                             showAddFolderDialog = false
-                            isLoading = true
+                            loadingCount++
                             client?.createFolder(currentFolderPath, folderName,
-                                onSuccess = {
-                                    refreshData()
-                                },
+                                onSuccess = refreshAndStop,
                                 onFailure = { err ->
                                     errorMessage = "Erreur création dossier: ${err.message}"
-                                    isLoading = false
+                                    if (loadingCount > 0) loadingCount--
                                 }
                             )
                         }
@@ -727,7 +745,7 @@ fun NextcloudHubApp() {
                     onClick = {
                         if (taskTitle.isNotEmpty()) {
                             showAddTaskDialog = false
-                            isLoading = true
+                            loadingCount++
                             val newTask = NextcloudTask(
                                 uid = UUID.randomUUID().toString(),
                                 summary = taskTitle,
@@ -737,12 +755,10 @@ fun NextcloudHubApp() {
                                 calendarHref = selectedTaskListHref
                             )
                             client?.saveTask(newTask,
-                                onSuccess = {
-                                    refreshData()
-                                },
+                                onSuccess = refreshAndStop,
                                 onFailure = { err ->
                                     errorMessage = "Création tâche échouée: ${err.message}"
-                                    isLoading = false
+                                    if (loadingCount > 0) loadingCount--
                                 }
                             )
                         }
@@ -810,7 +826,7 @@ fun NextcloudHubApp() {
                     onClick = {
                         if (eventTitle.isNotEmpty() && selectedCalendarHref.isNotEmpty()) {
                             showAddEventDialog = false
-                            isLoading = true
+                            loadingCount++
                             val newEvent = CalendarEvent(
                                 id = UUID.randomUUID().toString(),
                                 summary = eventTitle,
@@ -820,12 +836,10 @@ fun NextcloudHubApp() {
                                 location = if (eventLoc.isEmpty()) null else eventLoc
                             )
                             client?.saveEvent(selectedCalendarHref, newEvent,
-                                onSuccess = {
-                                    refreshData()
-                                },
+                                onSuccess = refreshAndStop,
                                 onFailure = { err ->
                                     errorMessage = "Création d'événement échouée: ${err.message}"
-                                    isLoading = false
+                                    if (loadingCount > 0) loadingCount--
                                 }
                             )
                         } else if (selectedCalendarHref.isEmpty()) {
@@ -864,23 +878,23 @@ fun NextcloudHubApp() {
                     onClick = {
                         if (listName.isNotEmpty()) {
                             showCreateTaskListDialog = false
-                            isLoading = true
+                            loadingCount++
                             client?.createTaskList(listName,
                                 onSuccess = {
-                                    client?.getCalendars(
-                                        onSuccess = { calList ->
-                                            calendars = calList
-                                            isLoading = false
+                                    client?.getTaskLists(
+                                        onSuccess = { list ->
+                                            taskLists = list
+                                            if (loadingCount > 0) loadingCount--
                                         },
                                         onFailure = { err ->
                                             errorMessage = err.message
-                                            isLoading = false
+                                            if (loadingCount > 0) loadingCount--
                                         }
                                     )
                                 },
                                 onFailure = { err ->
                                     errorMessage = "Création de liste échouée: ${err.message}"
-                                    isLoading = false
+                                    if (loadingCount > 0) loadingCount--
                                 }
                             )
                         }
@@ -917,24 +931,24 @@ fun NextcloudHubApp() {
                     onClick = {
                         if (newListName.isNotEmpty() && selectedTaskListHref.isNotEmpty()) {
                             showRenameTaskListDialog = false
-                            isLoading = true
+                            loadingCount++
                             client?.renameTaskList(selectedTaskListHref, newListName,
                                 onSuccess = {
                                     selectedTaskListName = newListName
-                                    client?.getCalendars(
-                                        onSuccess = { calList ->
-                                            calendars = calList
-                                            isLoading = false
+                                    client?.getTaskLists(
+                                        onSuccess = { list ->
+                                            taskLists = list
+                                            if (loadingCount > 0) loadingCount--
                                         },
                                         onFailure = { err ->
                                             errorMessage = err.message
-                                            isLoading = false
+                                            if (loadingCount > 0) loadingCount--
                                         }
                                     )
                                 },
                                 onFailure = { err ->
                                     errorMessage = "Renommer liste échoué: ${err.message}"
-                                    isLoading = false
+                                    if (loadingCount > 0) loadingCount--
                                 }
                             )
                         }
@@ -965,26 +979,26 @@ fun NextcloudHubApp() {
                     onClick = {
                         if (selectedTaskListHref.isNotEmpty()) {
                             showDeleteTaskListDialog = false
-                            isLoading = true
+                            loadingCount++
                             client?.deleteTaskList(selectedTaskListHref,
                                 onSuccess = {
                                     selectedTaskListHref = ""
                                     selectedTaskListName = ""
                                     tasks = emptyList()
-                                    client?.getCalendars(
-                                        onSuccess = { calList ->
-                                            calendars = calList
-                                            isLoading = false
+                                    client?.getTaskLists(
+                                        onSuccess = { list ->
+                                            taskLists = list
+                                            if (loadingCount > 0) loadingCount--
                                         },
                                         onFailure = { err ->
                                             errorMessage = err.message
-                                            isLoading = false
+                                            if (loadingCount > 0) loadingCount--
                                         }
                                     )
                                 },
                                 onFailure = { err ->
                                     errorMessage = "Suppression de liste échouée: ${err.message}"
-                                    isLoading = false
+                                    if (loadingCount > 0) loadingCount--
                                 }
                             )
                         }
@@ -1021,14 +1035,12 @@ fun NextcloudHubApp() {
                     onClick = {
                         if (newFileName.isNotEmpty() && newFileName != fileToRename!!.name) {
                             showRenameFileDialog = false
-                            isLoading = true
+                            loadingCount++
                             client?.renameFile(fileToRename!!.path, newFileName,
-                                onSuccess = {
-                                    refreshData()
-                                },
+                                onSuccess = refreshAndStop,
                                 onFailure = { err ->
                                     errorMessage = "Renommage échoué: ${err.message}"
-                                    isLoading = false
+                                    if (loadingCount > 0) loadingCount--
                                 }
                             )
                         }
@@ -1083,14 +1095,12 @@ fun NextcloudHubApp() {
                     onClick = {
                         if (noteTitle.isNotEmpty()) {
                             showAddNoteDialog = false
-                            isLoading = true
+                            loadingCount++
                             client?.createNote(noteTitle, noteContent, noteCategory,
-                                onSuccess = {
-                                    refreshData()
-                                },
+                                onSuccess = refreshAndStop,
                                 onFailure = { err ->
                                     errorMessage = "Création note échouée: ${err.message}"
-                                    isLoading = false
+                                    if (loadingCount > 0) loadingCount--
                                 }
                             )
                         }
@@ -1166,14 +1176,12 @@ fun NextcloudHubApp() {
                         TextButton(
                             onClick = {
                                 viewingNote = null
-                                isLoading = true
+                                loadingCount++
                                 client?.deleteNote(note.id,
-                                    onSuccess = {
-                                        refreshData()
-                                    },
+                                    onSuccess = refreshAndStop,
                                     onFailure = { err ->
                                         errorMessage = "Suppression note échouée: ${err.message}"
-                                        isLoading = false
+                                        if (loadingCount > 0) loadingCount--
                                     }
                                 )
                             },
@@ -1231,14 +1239,12 @@ fun NextcloudHubApp() {
                     onClick = {
                         if (noteTitle.isNotEmpty()) {
                             editingNote = null
-                            isLoading = true
+                            loadingCount++
                             client?.updateNote(note.id, noteTitle, noteContent, noteCategory, note.favorite,
-                                onSuccess = {
-                                    refreshData()
-                                },
+                                onSuccess = refreshAndStop,
                                 onFailure = { err ->
                                     errorMessage = "Mise à jour note échouée: ${err.message}"
-                                    isLoading = false
+                                    if (loadingCount > 0) loadingCount--
                                 }
                             )
                         }

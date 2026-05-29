@@ -1,4 +1,4 @@
-package com.example.nextcloudcalendar.data.model
+package xyz.luna.nextcloudextended.data.model
 
 data class NextcloudTask(
     val uid: String,
