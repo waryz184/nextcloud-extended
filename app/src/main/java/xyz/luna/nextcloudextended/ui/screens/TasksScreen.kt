@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import xyz.luna.nextcloudextended.LocalStrings
 import xyz.luna.nextcloudextended.data.model.NextcloudTask
 import java.time.Instant
 import java.time.LocalDate
@@ -34,6 +35,7 @@ fun TasksScreen(
     onRenameList: () -> Unit,
     onDeleteList: () -> Unit
 ) {
+    val s = LocalStrings.current
     var dropdownExpanded by remember { mutableStateOf(false) }
     var settingsExpanded by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -49,7 +51,7 @@ fun TasksScreen(
             Box(modifier = Modifier.weight(1f)) {
                 Card(modifier = Modifier.fillMaxWidth().clickable { dropdownExpanded = true }, shape = RoundedCornerShape(8.dp)) {
                     Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(selectedName.ifEmpty { "Sélectionnez..." }, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                        Text(selectedName.ifEmpty { s.selectEllipsis }, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                         Icon(Icons.Default.ArrowDropDown, null, tint = MaterialTheme.colorScheme.primary)
                     }
                 }
@@ -67,10 +69,10 @@ fun TasksScreen(
                     }
                 }
                 DropdownMenu(expanded = settingsExpanded, onDismissRequest = { settingsExpanded = false }) {
-                    DropdownMenuItem(text = { Text("Créer une liste") }, leadingIcon = { Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.primary) }, onClick = { settingsExpanded = false; onCreateList() })
+                    DropdownMenuItem(text = { Text(s.createList) }, leadingIcon = { Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.primary) }, onClick = { settingsExpanded = false; onCreateList() })
                     if (selectedName.isNotEmpty()) {
-                        DropdownMenuItem(text = { Text("Renommer la liste") }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = MaterialTheme.colorScheme.tertiary) }, onClick = { settingsExpanded = false; onRenameList() })
-                        DropdownMenuItem(text = { Text("Supprimer la liste") }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }, onClick = { settingsExpanded = false; onDeleteList() })
+                        DropdownMenuItem(text = { Text(s.renameListAction) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = MaterialTheme.colorScheme.tertiary) }, onClick = { settingsExpanded = false; onRenameList() })
+                        DropdownMenuItem(text = { Text(s.deleteListAction) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }, onClick = { settingsExpanded = false; onDeleteList() })
                     }
                 }
             }
@@ -79,7 +81,7 @@ fun TasksScreen(
         // Search field
         OutlinedTextField(
             value = searchQuery, onValueChange = { searchQuery = it },
-            placeholder = { Text("Rechercher des tâches...") },
+            placeholder = { Text(s.searchTasks) },
             leadingIcon = { Icon(Icons.Default.Search, null) },
             trailingIcon = { if (searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Clear, null) } },
             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
@@ -89,7 +91,7 @@ fun TasksScreen(
 
         if (filteredTasks.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(if (searchQuery.isBlank()) "Aucune tâche dans cette liste." else "Aucun résultat pour \"$searchQuery\"",
+                Text(if (searchQuery.isBlank()) s.noTaskInList else s.noResultsFor(searchQuery),
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
@@ -109,6 +111,7 @@ fun EditTaskDialog(
     onDismiss: () -> Unit,
     onSave: (summary: String, description: String, dueDate: String) -> Unit
 ) {
+    val s = LocalStrings.current
     var summary by remember { mutableStateOf(task.summary) }
     var description by remember { mutableStateOf(task.description ?: "") }
     var dueDate by remember { mutableStateOf(task.due ?: "") }
@@ -130,40 +133,41 @@ fun EditTaskDialog(
                         dueDate = Instant.ofEpochMilli(millis).atZone(ZoneId.of("UTC")).toLocalDate()
                             .format(DateTimeFormatter.ISO_LOCAL_DATE)
                     }
-                }) { Text("OK") }
+                }) { Text(s.ok) }
             },
-            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Annuler") } }
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text(s.cancel) } }
         ) { DatePicker(state = datePickerState) }
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Modifier la tâche") },
+        title = { Text(s.editTaskTitle) },
         text = {
             Column {
-                OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text("Titre") }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+                OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text(s.title) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text(s.description) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = dueDate, onValueChange = { dueDate = it },
-                        label = { Text("Échéance") }, placeholder = { Text("AAAA-MM-JJ") },
+                        label = { Text(s.dueDate) }, placeholder = { Text(s.dueDatePlaceholder) },
                         modifier = Modifier.weight(1f), readOnly = true
                     )
                     Spacer(Modifier.width(8.dp))
-                    IconButton(onClick = { showDatePicker = true }) { Icon(Icons.Default.DateRange, "Choisir date", tint = MaterialTheme.colorScheme.primary) }
+                    IconButton(onClick = { showDatePicker = true }) { Icon(Icons.Default.DateRange, s.pickDate, tint = MaterialTheme.colorScheme.primary) }
                     if (dueDate.isNotEmpty()) {
-                        IconButton(onClick = { dueDate = "" }) { Icon(Icons.Default.Clear, "Effacer date", tint = MaterialTheme.colorScheme.error) }
+                        IconButton(onClick = { dueDate = "" }) { Icon(Icons.Default.Clear, s.clearDate, tint = MaterialTheme.colorScheme.error) }
                     }
                 }
             }
         },
-        confirmButton = { Button(onClick = { if (summary.isNotEmpty()) { onDismiss(); onSave(summary, description, dueDate) } }) { Text("Enregistrer") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
+        confirmButton = { Button(onClick = { if (summary.isNotEmpty()) { onDismiss(); onSave(summary, description, dueDate) } }) { Text(s.save) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(s.cancel) } }
     )
 }
 
 @Composable
 fun TaskItem(task: NextcloudTask, onToggle: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
+    val s = LocalStrings.current
     val isCompleted = task.status == "COMPLETED"
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
         Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -175,8 +179,8 @@ fun TaskItem(task: NextcloudTask, onToggle: () -> Unit, onEdit: () -> Unit, onDe
                 if (!task.description.isNullOrEmpty()) Text(task.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (!task.due.isNullOrEmpty()) Text("⏳ ${task.due}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
             }
-            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "Modifier", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Supprimer", tint = MaterialTheme.colorScheme.error) }
+            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, s.edit, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, s.delete, tint = MaterialTheme.colorScheme.error) }
         }
     }
 }

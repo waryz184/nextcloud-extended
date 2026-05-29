@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import xyz.luna.nextcloudextended.LocalStrings
 import xyz.luna.nextcloudextended.data.model.NextcloudFile
 
 @Composable
@@ -26,6 +27,7 @@ fun FilesScreen(
     onDeleteFile: (NextcloudFile) -> Unit,
     onRenameFile: (NextcloudFile) -> Unit
 ) {
+    val s = LocalStrings.current
     var searchQuery by remember { mutableStateOf("") }
 
     val filteredFiles = remember(files, searchQuery) {
@@ -40,11 +42,11 @@ fun FilesScreen(
                 try { java.net.URLDecoder.decode(currentFolderPath, "UTF-8") } catch (e: Exception) { currentFolderPath }
             }
             if (decoded.count { it == '/' } > 5) {
-                IconButton(onClick = onBackClick) { Icon(Icons.Default.ArrowBack, "Retour") }
+                IconButton(onClick = onBackClick) { Icon(Icons.Default.ArrowBack, s.back) }
             }
             val folderName = remember(decoded) {
                 val parts = decoded.trimEnd('/').split('/')
-                if (parts.size <= 5) "Drive" else parts.last()
+                if (parts.size <= 5) s.driveRoot else parts.last()
             }
             Text(folderName, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
         }
@@ -52,7 +54,7 @@ fun FilesScreen(
         // Search
         OutlinedTextField(
             value = searchQuery, onValueChange = { searchQuery = it },
-            placeholder = { Text("Rechercher dans ce dossier...") },
+            placeholder = { Text(s.searchInFolder) },
             leadingIcon = { Icon(Icons.Default.Search, null) },
             trailingIcon = { if (searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Clear, null) } },
             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
@@ -61,7 +63,7 @@ fun FilesScreen(
 
         if (filteredFiles.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(if (searchQuery.isBlank()) "Dossier vide." else "Aucun résultat pour \"$searchQuery\"",
+                Text(if (searchQuery.isBlank()) s.emptyFolder else s.noResultsFor(searchQuery),
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
@@ -90,6 +92,7 @@ fun FileItem(
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val s = LocalStrings.current
     var menuExpanded by remember { mutableStateOf(false) }
 
     Card(modifier = Modifier.fillMaxWidth().clickable { onClick() }, shape = RoundedCornerShape(12.dp)) {
@@ -111,39 +114,39 @@ fun FileItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(file.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                 if (!file.isDirectory) {
-                    val sizeStr = remember(file.size) {
+                    val sizeStr = remember(file.size, s) {
                         val kb = file.size / 1024.0
-                        if (kb > 1024) String.format("%.1f Mo", kb / 1024.0) else String.format("%.1f Ko", kb)
+                        if (kb > 1024) String.format(s.locale, s.sizeMb, kb / 1024.0) else String.format(s.locale, s.sizeKb, kb)
                     }
                     Text(sizeStr, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
-                    Text("Dossier", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(s.folder, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
-                    Icon(Icons.Default.MoreVert, "Plus d'options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Default.MoreVert, s.moreOptions, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                     if (!file.isDirectory) {
                         DropdownMenuItem(
-                            text = { Text("Ouvrir") },
+                            text = { Text(s.open) },
                             leadingIcon = { Icon(Icons.Default.OpenInNew, null, tint = MaterialTheme.colorScheme.primary) },
                             onClick = { menuExpanded = false; onOpen() }
                         )
                         DropdownMenuItem(
-                            text = { Text("Partager") },
+                            text = { Text(s.share) },
                             leadingIcon = { Icon(Icons.Default.Share, null, tint = MaterialTheme.colorScheme.secondary) },
                             onClick = { menuExpanded = false; onShare() }
                         )
                     }
                     DropdownMenuItem(
-                        text = { Text("Renommer") },
+                        text = { Text(s.rename) },
                         leadingIcon = { Icon(Icons.Default.Edit, null, tint = MaterialTheme.colorScheme.tertiary) },
                         onClick = { menuExpanded = false; onRename() }
                     )
                     DropdownMenuItem(
-                        text = { Text("Supprimer") },
+                        text = { Text(s.delete) },
                         leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
                         onClick = { menuExpanded = false; onDelete() }
                     )

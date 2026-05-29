@@ -22,6 +22,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import xyz.luna.nextcloudextended.CalendarViewMode
+import xyz.luna.nextcloudextended.LocalStrings
 import xyz.luna.nextcloudextended.data.model.CalendarEvent
 import xyz.luna.nextcloudextended.data.model.CalendarInfo
 import java.time.DayOfWeek
@@ -72,6 +73,7 @@ fun CalendarMultiViewScreen(
     onDateChange: (LocalDate) -> Unit,
     onEventTap: (CalendarEvent) -> Unit
 ) {
+    val s = LocalStrings.current
     Column(modifier = Modifier.fillMaxWidth()) {
         // Calendar chips (horizontal scroll)
         if (calendarInfos.isNotEmpty()) {
@@ -92,7 +94,7 @@ fun CalendarMultiViewScreen(
         }
 
         // View mode selector
-        val modes = listOf(CalendarViewMode.DAY to "Jour", CalendarViewMode.WEEK to "Sem.", CalendarViewMode.MONTH to "Mois", CalendarViewMode.YEAR to "Année")
+        val modes = listOf(CalendarViewMode.DAY to s.viewDay, CalendarViewMode.WEEK to s.viewWeek, CalendarViewMode.MONTH to s.viewMonth, CalendarViewMode.YEAR to s.viewYear)
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             modes.forEachIndexed { i, (mode, label) ->
                 SegmentedButton(
@@ -124,9 +126,10 @@ fun MonthView(
     calendarInfos: List<CalendarInfo>, onDateChange: (LocalDate) -> Unit,
     onEventTap: (CalendarEvent) -> Unit
 ) {
+    val s = LocalStrings.current
     val yearMonth = YearMonth.of(selectedDate.year, selectedDate.month)
     val paddingDays = yearMonth.atDay(1).dayOfWeek.value - 1
-    val headerFmt = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.FRENCH)
+    val headerFmt = DateTimeFormatter.ofPattern("MMMM yyyy", s.locale)
     val dayOfMonthEvents = events.filter { it.startTime?.startsWith(selectedDate.toString()) == true }
 
     Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
@@ -139,7 +142,7 @@ fun MonthView(
 
         // Day-of-week header
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
-            listOf("L", "M", "M", "J", "V", "S", "D").forEach { d ->
+            s.dayInitials.forEach { d ->
                 Text(d, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -210,7 +213,7 @@ fun MonthView(
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp))
 
         // Events for selected day
-        val dayFmt = DateTimeFormatter.ofPattern("EEE d MMMM", Locale.FRENCH)
+        val dayFmt = DateTimeFormatter.ofPattern("EEE d MMMM", s.locale)
         Text(
             selectedDate.format(dayFmt).replaceFirstChar { it.uppercase() },
             style = MaterialTheme.typography.labelLarge,
@@ -218,7 +221,7 @@ fun MonthView(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
         )
         if (dayOfMonthEvents.isEmpty()) {
-            Text("Aucun événement", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Text(s.noEvent, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -239,7 +242,8 @@ fun DayTimeGrid(
     calendarInfos: List<CalendarInfo>, onDateChange: (LocalDate) -> Unit,
     onEventTap: (CalendarEvent) -> Unit
 ) {
-    val dayFmt = DateTimeFormatter.ofPattern("EEE d MMMM yyyy", Locale.FRENCH)
+    val s = LocalStrings.current
+    val dayFmt = DateTimeFormatter.ofPattern("EEE d MMMM yyyy", s.locale)
     val dayEvents = events.filter { it.startTime?.startsWith(selectedDate.toString()) == true }
     val timedEvents = dayEvents.filter { !isAllDay(it.startTime) }
     val allDayEvents = dayEvents.filter { isAllDay(it.startTime) }
@@ -271,7 +275,7 @@ fun DayTimeGrid(
                 for (h in 0..23) {
                     Box(modifier = Modifier.height(HOUR_HEIGHT), contentAlignment = Alignment.TopEnd) {
                         Text(
-                            if (h == 0) "" else "${h}h",
+                            if (h == 0) "" else "$h${s.hourSuffix}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(end = 8.dp, top = 0.dp)
@@ -332,7 +336,7 @@ fun DayTimeGrid(
                 // Empty day placeholder
                 if (timedEvents.isEmpty() && allDayEvents.isEmpty()) {
                     Box(Modifier.fillMaxSize().offset(y = HOUR_HEIGHT * 9), contentAlignment = Alignment.Center) {
-                        Text("Aucun événement ce jour", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                        Text(s.noEventThatDay, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }
@@ -349,9 +353,10 @@ fun WeekView(
     calendarInfos: List<CalendarInfo>, onDateChange: (LocalDate) -> Unit,
     onEventTap: (CalendarEvent) -> Unit
 ) {
+    val s = LocalStrings.current
     val startOfWeek = selectedDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-    val weekFmt = DateTimeFormatter.ofPattern("d MMM", Locale.FRENCH)
-    val dayFmt = DateTimeFormatter.ofPattern("EEE\nd", Locale.FRENCH)
+    val weekFmt = DateTimeFormatter.ofPattern("d MMM", s.locale)
+    val dayFmt = DateTimeFormatter.ofPattern("EEE\nd", s.locale)
 
     Column(modifier = Modifier.fillMaxWidth()) {
         // Week nav header
@@ -417,7 +422,7 @@ fun WeekView(
                     // Day number
                     Column(modifier = Modifier.width(36.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            day.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.FRENCH).replaceFirstChar { it.uppercase() },
+                            day.dayOfWeek.getDisplayName(TextStyle.SHORT, s.locale).replaceFirstChar { it.uppercase() },
                             style = MaterialTheme.typography.labelSmall,
                             color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -454,6 +459,7 @@ fun WeekView(
 
 @Composable
 fun YearView(selectedDate: LocalDate, onDateChange: (LocalDate) -> Unit, onYearChange: (LocalDate) -> Unit) {
+    val s = LocalStrings.current
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { onYearChange(selectedDate.withYear(selectedDate.year - 1)) }) { Icon(Icons.Default.KeyboardArrowLeft, null) }
@@ -468,7 +474,7 @@ fun YearView(selectedDate: LocalDate, onDateChange: (LocalDate) -> Unit, onYearC
                         val firstOfMonth = LocalDate.of(selectedDate.year, month, 1)
                         Card(modifier = Modifier.weight(1f).aspectRatio(1f).clickable { onDateChange(firstOfMonth) }, shape = RoundedCornerShape(12.dp)) {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text(firstOfMonth.month.getDisplayName(TextStyle.FULL, Locale.FRENCH).replaceFirstChar { it.uppercase() },
+                                Text(firstOfMonth.month.getDisplayName(TextStyle.FULL, s.locale).replaceFirstChar { it.uppercase() },
                                     style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center)
                             }
                         }
@@ -483,8 +489,9 @@ fun YearView(selectedDate: LocalDate, onDateChange: (LocalDate) -> Unit, onYearC
 
 @Composable
 fun EventChip(event: CalendarEvent, calendarInfos: List<CalendarInfo>, onTap: (CalendarEvent) -> Unit) {
+    val s = LocalStrings.current
     val color = calendarColorFor(event.calendarHref, calendarInfos)
-    val timeStr = if (!isAllDay(event.startTime)) event.startTime?.substring(11) ?: "" else "Toute la journée"
+    val timeStr = if (!isAllDay(event.startTime)) event.startTime?.substring(11) ?: "" else s.allDay
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
             .clickable { onTap(event) }.padding(vertical = 4.dp),
@@ -510,6 +517,7 @@ fun EventDetailSheet(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val s = LocalStrings.current
     var showDeleteConfirm by remember { mutableStateOf(false) }
     val color = calendarColorFor(event.calendarHref, calendarInfos)
     val calName = calendarNameFor(event.calendarHref, calendarInfos)
@@ -517,10 +525,10 @@ fun EventDetailSheet(
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Supprimer l'événement ?") },
-            text = { Text("« ${event.summary} » sera supprimé définitivement.") },
-            confirmButton = { Button(onClick = { showDeleteConfirm = false; onDismiss(); onDelete() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Supprimer") } },
-            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Annuler") } }
+            title = { Text(s.deleteEventTitle) },
+            text = { Text(s.deleteEventConfirm(event.summary)) },
+            confirmButton = { Button(onClick = { showDeleteConfirm = false; onDismiss(); onDelete() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text(s.delete) } },
+            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text(s.cancel) } }
         )
     }
 
@@ -581,13 +589,13 @@ fun EventDetailSheet(
                 TextButton(onClick = { showDeleteConfirm = true }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
                     Icon(Icons.Default.Delete, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Supprimer")
+                    Text(s.delete)
                 }
                 Spacer(Modifier.width(8.dp))
                 Button(onClick = { onDismiss(); onEdit() }) {
                     Icon(Icons.Default.Edit, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Modifier")
+                    Text(s.edit)
                 }
             }
         }

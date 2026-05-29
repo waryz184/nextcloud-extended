@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import xyz.luna.nextcloudextended.LocalStrings
 import xyz.luna.nextcloudextended.data.model.NextcloudNote
 
 @Composable
@@ -26,6 +27,7 @@ fun NotesScreen(
     onNoteSelected: (NextcloudNote) -> Unit,
     onToggleFavorite: (NextcloudNote) -> Unit
 ) {
+    val s = LocalStrings.current
     var searchQuery by remember { mutableStateOf("") }
 
     val filteredNotes = remember(notes, searchQuery) {
@@ -40,7 +42,7 @@ fun NotesScreen(
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         OutlinedTextField(
             value = searchQuery, onValueChange = { searchQuery = it },
-            placeholder = { Text("Rechercher des notes...") },
+            placeholder = { Text(s.searchNotes) },
             leadingIcon = { Icon(Icons.Default.Search, null) },
             trailingIcon = { if (searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Clear, null) } },
             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
@@ -49,7 +51,7 @@ fun NotesScreen(
 
         if (filteredNotes.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(if (searchQuery.isBlank()) "Aucune note trouvée." else "Aucun résultat pour \"$searchQuery\"",
+                Text(if (searchQuery.isBlank()) s.noNotes else s.noResultsFor(searchQuery),
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
@@ -64,6 +66,7 @@ fun NotesScreen(
 
 @Composable
 fun NoteItem(note: NextcloudNote, onClick: () -> Unit, onToggleFav: () -> Unit) {
+    val s = LocalStrings.current
     Card(modifier = Modifier.fillMaxWidth().clickable { onClick() }, shape = RoundedCornerShape(12.dp)) {
         Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
@@ -85,7 +88,7 @@ fun NoteItem(note: NextcloudNote, onClick: () -> Unit, onToggleFav: () -> Unit) 
             IconButton(onClick = { onToggleFav() }) {
                 Icon(
                     imageVector = if (note.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = "Favori",
+                    contentDescription = s.favorite,
                     tint = if (note.favorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }

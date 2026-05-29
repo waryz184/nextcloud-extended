@@ -18,7 +18,7 @@
 -dontwarn kotlin.**
 
 # Data models - keep field names for JSON/ICS parsing
--keepclassmembers class com.example.nextcloudcalendar.data.model.** { *; }
+-keepclassmembers class xyz.luna.nextcloudextended.data.model.** { *; }
 
 # org.json
 -keep class org.json.** { *; }

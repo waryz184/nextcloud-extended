@@ -651,7 +651,7 @@ class CalDavClient(
         for (match in vtodoRegex.findAll(unfolded)) {
             val s = match.value
             val uid = uidRegex.find(s)?.groupValues?.get(1)?.trim() ?: UUID.randomUUID().toString()
-            val summary = summaryRegex.find(s)?.groupValues?.get(1)?.trim() ?: "Tâche sans titre"
+            val summary = summaryRegex.find(s)?.groupValues?.get(1)?.trim() ?: "Untitled task"
             val description = descRegex.find(s)?.groupValues?.get(1)?.trim()?.replace("\\n", "\n")
             val status = statusRegex.find(s)?.groupValues?.get(1)?.trim() ?: "NEEDS-ACTION"
             val due = dueRegex.find(s)?.groupValues?.get(1)?.trim()

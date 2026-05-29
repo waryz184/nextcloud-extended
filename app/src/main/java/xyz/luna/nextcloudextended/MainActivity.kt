@@ -40,6 +40,7 @@ import xyz.luna.nextcloudextended.data.model.NextcloudTask
 import xyz.luna.nextcloudextended.ui.screens.*
 import xyz.luna.nextcloudextended.ui.theme.NextcloudExtendedTheme
 import java.io.File
+import java.util.Locale
 import java.util.UUID
 
 enum class HubTab { CALENDAR, TASKS, NOTES, FILES }
@@ -67,12 +68,21 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var allowInsecureHttp by remember { mutableStateOf(false) }
+    // Language: stored preference, else device locale (FR for French devices, EN otherwise)
+    var language by remember {
+        mutableStateOf(
+            sharedPrefs.getString("language", null)?.let { runCatching { AppLanguage.valueOf(it) }.getOrNull() }
+                ?: if (Locale.getDefault().language == "fr") AppLanguage.FR else AppLanguage.EN
+        )
+    }
+    LaunchedEffect(language) { vm.language = language }
     LaunchedEffect(Unit) {
         serverUrl = sharedPrefs.getString("server_url", "") ?: ""
         username = sharedPrefs.getString("username", "") ?: ""
         password = sharedPrefs.getString("password", "") ?: ""
         allowInsecureHttp = sharedPrefs.getBoolean("allow_insecure_http", false)
     }
+    val s = stringsFor(language)
 
     var showAddFolderDialog by remember { mutableStateOf(false) }
     var showDriveBottomSheet by remember { mutableStateOf(false) }
@@ -104,7 +114,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                 val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 val fileName = getFileNameFromUri(context, uri) ?: "upload_${System.currentTimeMillis()}"
                 if (bytes != null) vm.uploadFile(fileName, bytes)
-            } catch (e: Exception) { vm.errorMessage = "Erreur lecture fichier: ${e.message}" }
+            } catch (e: Exception) { vm.errorMessage = s.fileReadError(e.message ?: "") }
         }
     }
 
@@ -113,17 +123,18 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
             vm.currentFolderPath = "/remote.php/dav/files/$username/"
     }
 
+    CompositionLocalProvider(LocalStrings provides s) {
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(if (!vm.isConnected) "Nextcloud Extended" else when (vm.currentTab) { HubTab.CALENDAR -> "Agenda"; HubTab.TASKS -> "Tâches"; HubTab.NOTES -> "Notes"; HubTab.FILES -> "Drive" }) },
+                title = { Text(if (!vm.isConnected) "Nextcloud Extended" else when (vm.currentTab) { HubTab.CALENDAR -> s.tabCalendar; HubTab.TASKS -> s.tabTasks; HubTab.NOTES -> s.tabNotes; HubTab.FILES -> s.tabFiles }) },
                 actions = {
                     if (vm.isConnected) IconButton(onClick = {
                         vm.disconnect { sharedPrefs.edit().clear().apply() }
-                        coroutineScope.launch { snackbarHostState.showSnackbar("Déconnecté") }
-                    }) { Icon(Icons.Default.ExitToApp, "Se déconnecter") }
+                        coroutineScope.launch { snackbarHostState.showSnackbar(s.loggedOut) }
+                    }) { Icon(Icons.Default.ExitToApp, s.logout) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary, titleContentColor = MaterialTheme.colorScheme.onPrimary, actionIconContentColor = MaterialTheme.colorScheme.onPrimary, scrolledContainerColor = MaterialTheme.colorScheme.primary),
                 scrollBehavior = scrollBehavior
@@ -133,29 +144,30 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
             if (vm.isConnected) {
                 val uncompletedTasks = vm.tasks.count { it.status != "COMPLETED" }
                 NavigationBar {
-                    NavigationBarItem(selected = vm.currentTab == HubTab.CALENDAR, onClick = { vm.currentTab = HubTab.CALENDAR; vm.refreshData() }, label = { Text("Agenda") }, icon = { Icon(Icons.Default.DateRange, "Agenda") })
-                    NavigationBarItem(selected = vm.currentTab == HubTab.TASKS, onClick = { vm.currentTab = HubTab.TASKS; vm.refreshData() }, label = { Text("Tâches") }, icon = { BadgedBox(badge = { if (uncompletedTasks > 0) Badge { Text("$uncompletedTasks") } }) { Icon(Icons.Default.List, "Tâches") } })
-                    NavigationBarItem(selected = vm.currentTab == HubTab.NOTES, onClick = { vm.currentTab = HubTab.NOTES; vm.refreshData() }, label = { Text("Notes") }, icon = { Icon(Icons.Default.Edit, "Notes") })
-                    NavigationBarItem(selected = vm.currentTab == HubTab.FILES, onClick = { vm.currentTab = HubTab.FILES; vm.refreshData() }, label = { Text("Drive") }, icon = { Icon(Icons.Default.Folder, "Drive") })
+                    NavigationBarItem(selected = vm.currentTab == HubTab.CALENDAR, onClick = { vm.currentTab = HubTab.CALENDAR; vm.refreshData() }, label = { Text(s.tabCalendar) }, icon = { Icon(Icons.Default.DateRange, s.tabCalendar) })
+                    NavigationBarItem(selected = vm.currentTab == HubTab.TASKS, onClick = { vm.currentTab = HubTab.TASKS; vm.refreshData() }, label = { Text(s.tabTasks) }, icon = { BadgedBox(badge = { if (uncompletedTasks > 0) Badge { Text("$uncompletedTasks") } }) { Icon(Icons.Default.List, s.tabTasks) } })
+                    NavigationBarItem(selected = vm.currentTab == HubTab.NOTES, onClick = { vm.currentTab = HubTab.NOTES; vm.refreshData() }, label = { Text(s.tabNotes) }, icon = { Icon(Icons.Default.Edit, s.tabNotes) })
+                    NavigationBarItem(selected = vm.currentTab == HubTab.FILES, onClick = { vm.currentTab = HubTab.FILES; vm.refreshData() }, label = { Text(s.tabFiles) }, icon = { Icon(Icons.Default.Folder, s.tabFiles) })
                 }
             }
         },
         floatingActionButton = {
             if (vm.isConnected) when (vm.currentTab) {
-                HubTab.TASKS -> FloatingActionButton(onClick = { showAddTaskDialog = true }) { Icon(Icons.Default.Add, "Ajouter tâche") }
-                HubTab.NOTES -> FloatingActionButton(onClick = { showAddNoteDialog = true }) { Icon(Icons.Default.Add, "Créer note") }
-                HubTab.FILES -> FloatingActionButton(onClick = { showDriveBottomSheet = true }) { Icon(Icons.Default.Add, "Ajouter") }
-                HubTab.CALENDAR -> FloatingActionButton(onClick = { showAddEventDialog = true }) { Icon(Icons.Default.Add, "Ajouter événement") }
+                HubTab.TASKS -> FloatingActionButton(onClick = { showAddTaskDialog = true }) { Icon(Icons.Default.Add, s.addTask) }
+                HubTab.NOTES -> FloatingActionButton(onClick = { showAddNoteDialog = true }) { Icon(Icons.Default.Add, s.createNote) }
+                HubTab.FILES -> FloatingActionButton(onClick = { showDriveBottomSheet = true }) { Icon(Icons.Default.Add, s.add) }
+                HubTab.CALENDAR -> FloatingActionButton(onClick = { showAddEventDialog = true }) { Icon(Icons.Default.Add, s.addEvent) }
             }
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding).background(MaterialTheme.colorScheme.background)) {
             if (!vm.isConnected) {
                 LoginScreen(serverUrl = serverUrl, username = username, password = password, isLoading = vm.isLoading, allowInsecureHttp = allowInsecureHttp,
+                    language = language, onLanguageChange = { language = it; sharedPrefs.edit().putString("language", it.name).apply() },
                     onServerUrlChange = { serverUrl = it }, onUsernameChange = { username = it }, onPasswordChange = { password = it }, onAllowInsecureHttpChange = { allowInsecureHttp = it },
                     onConnect = {
-                        if (serverUrl.isEmpty() || username.isEmpty() || password.isEmpty()) { vm.errorMessage = "Veuillez remplir tous les champs"; return@LoginScreen }
-                        if (serverUrl.startsWith("http://") && !allowInsecureHttp) { vm.errorMessage = "HTTP non sécurisé bloqué — activez l'option dans Options avancées."; return@LoginScreen }
+                        if (serverUrl.isEmpty() || username.isEmpty() || password.isEmpty()) { vm.errorMessage = s.fillAllFields; return@LoginScreen }
+                        if (serverUrl.startsWith("http://") && !allowInsecureHttp) { vm.errorMessage = s.insecureHttpBlocked; return@LoginScreen }
                         vm.connect(serverUrl, username, password) {
                             sharedPrefs.edit().putString("server_url", serverUrl).putString("username", username).putString("password", password).putBoolean("allow_insecure_http", allowInsecureHttp).apply()
                         }
@@ -175,7 +187,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                                     if (fileUrl != null && auth != null) {
                                         val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
                                         dm.enqueue(android.app.DownloadManager.Request(Uri.parse(fileUrl)).addRequestHeader("Authorization", auth).setDestinationInExternalFilesDir(context, android.os.Environment.DIRECTORY_DOWNLOADS, file.name).setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED).setTitle(file.name).setDescription("Nextcloud Extended"))
-                                        coroutineScope.launch { snackbarHostState.showSnackbar("Téléchargement de ${file.name} démarré") }
+                                        coroutineScope.launch { snackbarHostState.showSnackbar(s.downloadStarted(file.name)) }
                                     }
                                 }
                             },
@@ -185,8 +197,8 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                                         val cacheFile = File(context.cacheDir, file.name); cacheFile.writeBytes(bytes)
                                         val uri = FileProvider.getUriForFile(context, "xyz.luna.nextcloudextended.provider", cacheFile)
                                         val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.name.substringAfterLast('.', "").lowercase()) ?: "*/*"
-                                        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Ouvrir avec"))
-                                    } catch (e: Exception) { vm.errorMessage = "Impossible d'ouvrir: ${e.message}" }
+                                        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), s.openWith))
+                                    } catch (e: Exception) { vm.errorMessage = s.cannotOpen(e.message ?: "") }
                                 }
                             },
                             onShareFile = { vm.createShareLink(it) },
@@ -211,10 +223,10 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
 
     // Share link
     vm.shareLink?.let { link ->
-        AlertDialog(onDismissRequest = { vm.shareLink = null }, title = { Text("Lien de partage") },
-            text = { Column { Text("Lien public créé :", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.height(8.dp)); Text(link) } },
-            confirmButton = { Button(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("link", link)); vm.shareLink = null; coroutineScope.launch { snackbarHostState.showSnackbar("Lien copié") } }) { Text("Copier") } },
-            dismissButton = { Row { TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link))) }) { Text("Ouvrir") }; TextButton(onClick = { vm.shareLink = null }) { Text("Fermer") } } })
+        AlertDialog(onDismissRequest = { vm.shareLink = null }, title = { Text(s.shareLinkTitle) },
+            text = { Column { Text(s.publicLinkCreated, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.height(8.dp)); Text(link) } },
+            confirmButton = { Button(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("link", link)); vm.shareLink = null; coroutineScope.launch { snackbarHostState.showSnackbar(s.linkCopied) } }) { Text(s.copy) } },
+            dismissButton = { Row { TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link))) }) { Text(s.open) }; TextButton(onClick = { vm.shareLink = null }) { Text(s.close) } } })
     }
 
     // Edit event
@@ -224,16 +236,16 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         var evLoc by remember(event) { mutableStateOf(event.location ?: "") }
         var evStart by remember(event) { mutableStateOf(event.startTime ?: "") }
         var evEnd by remember(event) { mutableStateOf(event.endTime ?: "") }
-        AlertDialog(onDismissRequest = { editingEvent = null }, title = { Text("Modifier l'événement") },
+        AlertDialog(onDismissRequest = { editingEvent = null }, title = { Text(s.editEvent) },
             text = { Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                OutlinedTextField(value = evTitle, onValueChange = { evTitle = it }, label = { Text("Titre") }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-                OutlinedTextField(value = evDesc, onValueChange = { evDesc = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-                OutlinedTextField(value = evLoc, onValueChange = { evLoc = it }, label = { Text("Lieu") }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-                OutlinedTextField(value = evStart, onValueChange = { evStart = it }, label = { Text("Début (AAAA-MM-JJ HH:MM)") }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-                OutlinedTextField(value = evEnd, onValueChange = { evEnd = it }, label = { Text("Fin (AAAA-MM-JJ HH:MM)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = evTitle, onValueChange = { evTitle = it }, label = { Text(s.title) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+                OutlinedTextField(value = evDesc, onValueChange = { evDesc = it }, label = { Text(s.description) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+                OutlinedTextField(value = evLoc, onValueChange = { evLoc = it }, label = { Text(s.location) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+                OutlinedTextField(value = evStart, onValueChange = { evStart = it }, label = { Text(s.startDateTime) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+                OutlinedTextField(value = evEnd, onValueChange = { evEnd = it }, label = { Text(s.endDateTime) }, modifier = Modifier.fillMaxWidth())
             } },
-            confirmButton = { Button(onClick = { if (evTitle.isNotEmpty()) { editingEvent = null; vm.editEvent(event, evTitle, evDesc, evLoc, evStart, evEnd) } }) { Text("Enregistrer") } },
-            dismissButton = { TextButton(onClick = { editingEvent = null }) { Text("Annuler") } })
+            confirmButton = { Button(onClick = { if (evTitle.isNotEmpty()) { editingEvent = null; vm.editEvent(event, evTitle, evDesc, evLoc, evStart, evEnd) } }) { Text(s.save) } },
+            dismissButton = { TextButton(onClick = { editingEvent = null }) { Text(s.cancel) } })
     }
 
     // Edit task
@@ -245,64 +257,64 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     if (showDriveBottomSheet) {
         ModalBottomSheet(onDismissRequest = { showDriveBottomSheet = false }) {
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Ajouter au Drive", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
-                FilledTonalButton(onClick = { showDriveBottomSheet = false; showAddFolderDialog = true }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Folder, null); Spacer(Modifier.width(8.dp)); Text("Créer un dossier") }
-                FilledTonalButton(onClick = { showDriveBottomSheet = false; filePickerLauncher.launch("*/*") }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Publish, null); Spacer(Modifier.width(8.dp)); Text("Importer un fichier") }
+                Text(s.addToDrive, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
+                FilledTonalButton(onClick = { showDriveBottomSheet = false; showAddFolderDialog = true }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Folder, null); Spacer(Modifier.width(8.dp)); Text(s.createFolder) }
+                FilledTonalButton(onClick = { showDriveBottomSheet = false; filePickerLauncher.launch("*/*") }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Publish, null); Spacer(Modifier.width(8.dp)); Text(s.uploadFile) }
             }
         }
     }
 
     // Add folder
     if (showAddFolderDialog) { var name by remember { mutableStateOf("") }
-        AlertDialog(onDismissRequest = { showAddFolderDialog = false }, title = { Text("Nouveau dossier") }, text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nom du dossier") }, modifier = Modifier.fillMaxWidth()) },
-            confirmButton = { Button(onClick = { if (name.isNotEmpty()) { showAddFolderDialog = false; vm.createFolder(name) } }) { Text("Créer") } }, dismissButton = { TextButton(onClick = { showAddFolderDialog = false }) { Text("Annuler") } }) }
+        AlertDialog(onDismissRequest = { showAddFolderDialog = false }, title = { Text(s.newFolder) }, text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(s.folderName) }, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = { Button(onClick = { if (name.isNotEmpty()) { showAddFolderDialog = false; vm.createFolder(name) } }) { Text(s.create) } }, dismissButton = { TextButton(onClick = { showAddFolderDialog = false }) { Text(s.cancel) } }) }
 
     // Add task
     if (showAddTaskDialog) { var taskTitle by remember { mutableStateOf("") }; var taskDesc by remember { mutableStateOf("") }
-        AlertDialog(onDismissRequest = { showAddTaskDialog = false }, title = { Text("Nouvelle tâche") }, text = { Column { OutlinedTextField(value = taskTitle, onValueChange = { taskTitle = it }, label = { Text("Titre") }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)); OutlinedTextField(value = taskDesc, onValueChange = { taskDesc = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) } },
-            confirmButton = { Button(onClick = { if (taskTitle.isNotEmpty()) { showAddTaskDialog = false; vm.createTask(UUID.randomUUID().toString(), taskTitle, taskDesc) } }) { Text("Ajouter") } }, dismissButton = { TextButton(onClick = { showAddTaskDialog = false }) { Text("Annuler") } }) }
+        AlertDialog(onDismissRequest = { showAddTaskDialog = false }, title = { Text(s.newTask) }, text = { Column { OutlinedTextField(value = taskTitle, onValueChange = { taskTitle = it }, label = { Text(s.title) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)); OutlinedTextField(value = taskDesc, onValueChange = { taskDesc = it }, label = { Text(s.description) }, modifier = Modifier.fillMaxWidth()) } },
+            confirmButton = { Button(onClick = { if (taskTitle.isNotEmpty()) { showAddTaskDialog = false; vm.createTask(UUID.randomUUID().toString(), taskTitle, taskDesc) } }) { Text(s.add) } }, dismissButton = { TextButton(onClick = { showAddTaskDialog = false }) { Text(s.cancel) } }) }
 
     // Add event
     if (showAddEventDialog) {
         var evTitle by remember { mutableStateOf("") }; var evDesc by remember { mutableStateOf("") }; var evLoc by remember { mutableStateOf("") }
         var evStart by remember { mutableStateOf(vm.selectedDate.toString() + " 10:00") }; var evEnd by remember { mutableStateOf(vm.selectedDate.toString() + " 11:00") }
         var calDropdown by remember { mutableStateOf(false) }; var selHref by remember { mutableStateOf(vm.calendarInfos.firstOrNull()?.href ?: "") }; var selName by remember { mutableStateOf(vm.calendarInfos.firstOrNull()?.displayName ?: "") }
-        AlertDialog(onDismissRequest = { showAddEventDialog = false }, title = { Text("Nouvel événement") },
+        AlertDialog(onDismissRequest = { showAddEventDialog = false }, title = { Text(s.newEvent) },
             text = { Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 if (vm.calendarInfos.size > 1) Box(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                    OutlinedTextField(value = selName, onValueChange = {}, label = { Text("Calendrier") }, readOnly = true, modifier = Modifier.fillMaxWidth(), trailingIcon = { IconButton(onClick = { calDropdown = true }) { Icon(Icons.Default.ArrowDropDown, null) } })
+                    OutlinedTextField(value = selName, onValueChange = {}, label = { Text(s.calendarLabel) }, readOnly = true, modifier = Modifier.fillMaxWidth(), trailingIcon = { IconButton(onClick = { calDropdown = true }) { Icon(Icons.Default.ArrowDropDown, null) } })
                     DropdownMenu(expanded = calDropdown, onDismissRequest = { calDropdown = false }) { vm.calendarInfos.forEach { cal -> DropdownMenuItem(text = { Text(cal.displayName) }, onClick = { selHref = cal.href; selName = cal.displayName; calDropdown = false }) } }
                 }
-                OutlinedTextField(value = evTitle, onValueChange = { evTitle = it }, label = { Text("Titre") }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-                OutlinedTextField(value = evDesc, onValueChange = { evDesc = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-                OutlinedTextField(value = evLoc, onValueChange = { evLoc = it }, label = { Text("Lieu") }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-                OutlinedTextField(value = evStart, onValueChange = { evStart = it }, label = { Text("Début (AAAA-MM-JJ HH:MM)") }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-                OutlinedTextField(value = evEnd, onValueChange = { evEnd = it }, label = { Text("Fin (AAAA-MM-JJ HH:MM)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = evTitle, onValueChange = { evTitle = it }, label = { Text(s.title) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+                OutlinedTextField(value = evDesc, onValueChange = { evDesc = it }, label = { Text(s.description) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+                OutlinedTextField(value = evLoc, onValueChange = { evLoc = it }, label = { Text(s.location) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+                OutlinedTextField(value = evStart, onValueChange = { evStart = it }, label = { Text(s.startDateTime) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+                OutlinedTextField(value = evEnd, onValueChange = { evEnd = it }, label = { Text(s.endDateTime) }, modifier = Modifier.fillMaxWidth())
             } },
-            confirmButton = { Button(onClick = { if (evTitle.isNotEmpty() && selHref.isNotEmpty()) { showAddEventDialog = false; vm.createEvent(CalendarEvent(UUID.randomUUID().toString(), evTitle, evDesc.ifEmpty { null }, evStart, evEnd, evLoc.ifEmpty { null }, selHref), selHref) } else if (selHref.isEmpty()) { vm.errorMessage = "Sélectionnez un calendrier d'abord" } }) { Text("Ajouter") } },
-            dismissButton = { TextButton(onClick = { showAddEventDialog = false }) { Text("Annuler") } })
+            confirmButton = { Button(onClick = { if (evTitle.isNotEmpty() && selHref.isNotEmpty()) { showAddEventDialog = false; vm.createEvent(CalendarEvent(UUID.randomUUID().toString(), evTitle, evDesc.ifEmpty { null }, evStart, evEnd, evLoc.ifEmpty { null }, selHref), selHref) } else if (selHref.isEmpty()) { vm.errorMessage = s.selectCalendarFirst } }) { Text(s.add) } },
+            dismissButton = { TextButton(onClick = { showAddEventDialog = false }) { Text(s.cancel) } })
     }
 
     // Task list management
     if (showCreateTaskListDialog) { var name by remember { mutableStateOf("") }
-        AlertDialog(onDismissRequest = { showCreateTaskListDialog = false }, title = { Text("Nouvelle liste") }, text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nom") }, modifier = Modifier.fillMaxWidth()) },
-            confirmButton = { Button(onClick = { if (name.isNotEmpty()) { showCreateTaskListDialog = false; vm.createTaskList(name) } }) { Text("Créer") } }, dismissButton = { TextButton(onClick = { showCreateTaskListDialog = false }) { Text("Annuler") } }) }
+        AlertDialog(onDismissRequest = { showCreateTaskListDialog = false }, title = { Text(s.newList) }, text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(s.name) }, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = { Button(onClick = { if (name.isNotEmpty()) { showCreateTaskListDialog = false; vm.createTaskList(name) } }) { Text(s.create) } }, dismissButton = { TextButton(onClick = { showCreateTaskListDialog = false }) { Text(s.cancel) } }) }
     if (showRenameTaskListDialog) { var name by remember { mutableStateOf(vm.selectedTaskListName) }
-        AlertDialog(onDismissRequest = { showRenameTaskListDialog = false }, title = { Text("Renommer") }, text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nouveau nom") }, modifier = Modifier.fillMaxWidth()) },
-            confirmButton = { Button(onClick = { if (name.isNotEmpty()) { showRenameTaskListDialog = false; vm.renameTaskList(name) } }) { Text("Renommer") } }, dismissButton = { TextButton(onClick = { showRenameTaskListDialog = false }) { Text("Annuler") } }) }
+        AlertDialog(onDismissRequest = { showRenameTaskListDialog = false }, title = { Text(s.renameTitle) }, text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(s.newName) }, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = { Button(onClick = { if (name.isNotEmpty()) { showRenameTaskListDialog = false; vm.renameTaskList(name) } }) { Text(s.rename) } }, dismissButton = { TextButton(onClick = { showRenameTaskListDialog = false }) { Text(s.cancel) } }) }
     if (showDeleteTaskListDialog) {
-        AlertDialog(onDismissRequest = { showDeleteTaskListDialog = false }, title = { Text("Supprimer la liste ?") }, text = { Text("Supprimer '${vm.selectedTaskListName}' et toutes ses tâches ? Action irréversible.") },
-            confirmButton = { Button(onClick = { showDeleteTaskListDialog = false; vm.deleteTaskList() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Supprimer") } }, dismissButton = { TextButton(onClick = { showDeleteTaskListDialog = false }) { Text("Annuler") } }) }
+        AlertDialog(onDismissRequest = { showDeleteTaskListDialog = false }, title = { Text(s.deleteListTitle) }, text = { Text(s.deleteListConfirm(vm.selectedTaskListName)) },
+            confirmButton = { Button(onClick = { showDeleteTaskListDialog = false; vm.deleteTaskList() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text(s.delete) } }, dismissButton = { TextButton(onClick = { showDeleteTaskListDialog = false }) { Text(s.cancel) } }) }
 
     // Rename file
     if (showRenameFileDialog && fileToRename != null) { var name by remember { mutableStateOf(fileToRename!!.name) }
-        AlertDialog(onDismissRequest = { showRenameFileDialog = false }, title = { Text("Renommer") }, text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nouveau nom") }, modifier = Modifier.fillMaxWidth()) },
-            confirmButton = { Button(onClick = { if (name.isNotEmpty() && name != fileToRename!!.name) { showRenameFileDialog = false; vm.renameFile(fileToRename!!.path, name) } }) { Text("Renommer") } }, dismissButton = { TextButton(onClick = { showRenameFileDialog = false }) { Text("Annuler") } }) }
+        AlertDialog(onDismissRequest = { showRenameFileDialog = false }, title = { Text(s.renameTitle) }, text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(s.newName) }, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = { Button(onClick = { if (name.isNotEmpty() && name != fileToRename!!.name) { showRenameFileDialog = false; vm.renameFile(fileToRename!!.path, name) } }) { Text(s.rename) } }, dismissButton = { TextButton(onClick = { showRenameFileDialog = false }) { Text(s.cancel) } }) }
 
     // Add note
-    if (showAddNoteDialog) { var noteTitle by remember { mutableStateOf("") }; var noteContent by remember { mutableStateOf("") }; var noteCat by remember { mutableStateOf("Général") }
-        AlertDialog(onDismissRequest = { showAddNoteDialog = false }, title = { Text("Nouvelle note") }, text = { Column(modifier = Modifier.verticalScroll(rememberScrollState())) { OutlinedTextField(value = noteTitle, onValueChange = { noteTitle = it }, label = { Text("Titre") }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)); OutlinedTextField(value = noteCat, onValueChange = { noteCat = it }, label = { Text("Catégorie") }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)); OutlinedTextField(value = noteContent, onValueChange = { noteContent = it }, label = { Text("Contenu") }, minLines = 4, modifier = Modifier.fillMaxWidth()) } },
-            confirmButton = { Button(onClick = { if (noteTitle.isNotEmpty()) { showAddNoteDialog = false; vm.createNote(noteTitle, noteContent, noteCat) } }) { Text("Créer") } }, dismissButton = { TextButton(onClick = { showAddNoteDialog = false }) { Text("Annuler") } }) }
+    if (showAddNoteDialog) { var noteTitle by remember { mutableStateOf("") }; var noteContent by remember { mutableStateOf("") }; var noteCat by remember { mutableStateOf(s.defaultCategory) }
+        AlertDialog(onDismissRequest = { showAddNoteDialog = false }, title = { Text(s.newNote) }, text = { Column(modifier = Modifier.verticalScroll(rememberScrollState())) { OutlinedTextField(value = noteTitle, onValueChange = { noteTitle = it }, label = { Text(s.title) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)); OutlinedTextField(value = noteCat, onValueChange = { noteCat = it }, label = { Text(s.category) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)); OutlinedTextField(value = noteContent, onValueChange = { noteContent = it }, label = { Text(s.content) }, minLines = 4, modifier = Modifier.fillMaxWidth()) } },
+            confirmButton = { Button(onClick = { if (noteTitle.isNotEmpty()) { showAddNoteDialog = false; vm.createNote(noteTitle, noteContent, noteCat) } }) { Text(s.create) } }, dismissButton = { TextButton(onClick = { showAddNoteDialog = false }) { Text(s.cancel) } }) }
 
     // View note with Markdown rendering
     viewingNote?.let { note ->
@@ -310,15 +322,15 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
             Card(modifier = Modifier.fillMaxWidth().padding(16.dp), shape = RoundedCornerShape(16.dp)) {
                 Column(modifier = Modifier.padding(24.dp).verticalScroll(rememberScrollState())) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (note.category.isNotEmpty()) note.category.uppercase() else "NOTE", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                        IconButton(onClick = { viewingNote = null; editingNote = note }) { Icon(Icons.Default.Edit, "Modifier", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        Text(if (note.category.isNotEmpty()) note.category.uppercase() else s.noteFallbackLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        IconButton(onClick = { viewingNote = null; editingNote = note }) { Icon(Icons.Default.Edit, s.edit, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
                     Text(note.title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 16.dp))
                     HorizontalDivider(modifier = Modifier.padding(bottom = 16.dp))
                     MarkdownText(note.content, modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        TextButton(onClick = { viewingNote = null; vm.deleteNote(note.id) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Supprimer") }
-                        Button(onClick = { viewingNote = null }) { Text("Fermer") }
+                        TextButton(onClick = { viewingNote = null; vm.deleteNote(note.id) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text(s.delete) }
+                        Button(onClick = { viewingNote = null }) { Text(s.close) }
                     }
                 }
             }
@@ -328,8 +340,9 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     // Edit note
     editingNote?.let { note ->
         var noteTitle by remember { mutableStateOf(note.title) }; var noteContent by remember { mutableStateOf(note.content) }; var noteCat by remember { mutableStateOf(note.category) }
-        AlertDialog(onDismissRequest = { editingNote = null }, title = { Text("Modifier la note") }, text = { Column(modifier = Modifier.verticalScroll(rememberScrollState())) { OutlinedTextField(value = noteTitle, onValueChange = { noteTitle = it }, label = { Text("Titre") }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)); OutlinedTextField(value = noteCat, onValueChange = { noteCat = it }, label = { Text("Catégorie") }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)); OutlinedTextField(value = noteContent, onValueChange = { noteContent = it }, label = { Text("Contenu") }, minLines = 5, modifier = Modifier.fillMaxWidth()) } },
-            confirmButton = { Button(onClick = { if (noteTitle.isNotEmpty()) { editingNote = null; vm.updateNote(note, noteTitle, noteContent, noteCat) } }) { Text("Enregistrer") } }, dismissButton = { TextButton(onClick = { editingNote = null }) { Text("Annuler") } })
+        AlertDialog(onDismissRequest = { editingNote = null }, title = { Text(s.editNote) }, text = { Column(modifier = Modifier.verticalScroll(rememberScrollState())) { OutlinedTextField(value = noteTitle, onValueChange = { noteTitle = it }, label = { Text(s.title) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)); OutlinedTextField(value = noteCat, onValueChange = { noteCat = it }, label = { Text(s.category) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)); OutlinedTextField(value = noteContent, onValueChange = { noteContent = it }, label = { Text(s.content) }, minLines = 5, modifier = Modifier.fillMaxWidth()) } },
+            confirmButton = { Button(onClick = { if (noteTitle.isNotEmpty()) { editingNote = null; vm.updateNote(note, noteTitle, noteContent, noteCat) } }) { Text(s.save) } }, dismissButton = { TextButton(onClick = { editingNote = null }) { Text(s.cancel) } })
+    }
     }
 }
 

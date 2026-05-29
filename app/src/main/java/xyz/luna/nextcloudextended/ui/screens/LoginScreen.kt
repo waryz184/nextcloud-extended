@@ -18,7 +18,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import xyz.luna.nextcloudextended.AppLanguage
+import xyz.luna.nextcloudextended.LocalStrings
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(
     serverUrl: String,
@@ -26,12 +29,15 @@ fun LoginScreen(
     password: String,
     isLoading: Boolean,
     allowInsecureHttp: Boolean,
+    language: AppLanguage,
+    onLanguageChange: (AppLanguage) -> Unit,
     onServerUrlChange: (String) -> Unit,
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onAllowInsecureHttpChange: (Boolean) -> Unit,
     onConnect: () -> Unit
 ) {
+    val s = LocalStrings.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -40,6 +46,19 @@ fun LoginScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // Language selector
+        val languages = listOf(AppLanguage.EN to "English", AppLanguage.FR to "Français")
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.padding(bottom = 24.dp)) {
+            languages.forEachIndexed { i, (lang, label) ->
+                SegmentedButton(
+                    shape = SegmentedButtonDefaults.itemShape(index = i, count = languages.size),
+                    onClick = { onLanguageChange(lang) },
+                    selected = language == lang,
+                    label = { Text(label, style = MaterialTheme.typography.labelMedium) }
+                )
+            }
+        }
+
         Text(
             "Nextcloud Extended",
             style = MaterialTheme.typography.displaySmall,
@@ -47,27 +66,27 @@ fun LoginScreen(
             modifier = Modifier.padding(bottom = 8.dp)
         )
         Text(
-            "Calendrier, Tâches & Notes",
+            s.loginSubtitle,
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 32.dp)
         )
         OutlinedTextField(
             value = serverUrl, onValueChange = onServerUrlChange,
-            label = { Text("URL du serveur") },
-            placeholder = { Text("https://votre-nextcloud.com") },
+            label = { Text(s.serverUrlLabel) },
+            placeholder = { Text(s.serverUrlPlaceholder) },
             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
             singleLine = true
         )
         OutlinedTextField(
             value = username, onValueChange = onUsernameChange,
-            label = { Text("Identifiant") },
+            label = { Text(s.usernameLabel) },
             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
             singleLine = true
         )
         OutlinedTextField(
             value = password, onValueChange = onPasswordChange,
-            label = { Text("Mot de passe") },
+            label = { Text(s.passwordLabel) },
             visualTransformation = PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
             singleLine = true
@@ -79,7 +98,7 @@ fun LoginScreen(
             modifier = Modifier.fillMaxWidth().clickable { advancedExpanded = !advancedExpanded }.padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Options avancées", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(s.advancedOptions, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Icon(
                 imageVector = if (advancedExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                 contentDescription = null,
@@ -92,9 +111,9 @@ fun LoginScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Autoriser HTTP non sécurisé", style = MaterialTheme.typography.bodyMedium)
+                    Text(s.allowInsecureHttp, style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "À n'activer que pour un serveur sur réseau local. Vos identifiants circuleront en clair.",
+                        s.insecureHttpWarning,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
@@ -118,7 +137,7 @@ fun LoginScreen(
                     color = MaterialTheme.colorScheme.onPrimary
                 )
             } else {
-                Text("Se connecter", style = MaterialTheme.typography.titleSmall)
+                Text(s.connect, style = MaterialTheme.typography.titleSmall)
             }
         }
     }

@@ -21,6 +21,10 @@ class NextcloudViewModel : ViewModel() {
     var loadingCount by mutableIntStateOf(0)
     val isLoading get() = loadingCount > 0
 
+    // Selected UI language — kept in sync by the UI; drives error-message localization.
+    var language by mutableStateOf(AppLanguage.EN)
+    private val s get() = stringsFor(language)
+
     var currentTab by mutableStateOf(HubTab.CALENDAR)
     var calendarViewMode by mutableStateOf(CalendarViewMode.MONTH)
     var selectedDate by mutableStateOf(LocalDate.now())
@@ -39,6 +43,8 @@ class NextcloudViewModel : ViewModel() {
 
     var errorMessage by mutableStateOf<String?>(null)
     var shareLink by mutableStateOf<String?>(null)
+
+    private fun msg(e: Exception?): String = e?.message ?: ""
 
     fun toggleCalendar(href: String) {
         activeCalendarHrefs = if (href in activeCalendarHrefs) activeCalendarHrefs - href
@@ -69,7 +75,7 @@ class NextcloudViewModel : ViewModel() {
                         events = collected.sortedBy { it.startTime ?: "" }
                         if (loadingCount > 0) loadingCount--
                     }
-                    errorMessage = "Calendar error: ${err.message}"
+                    errorMessage = s.calendarError(msg(err))
                 }
             )
         }
@@ -90,7 +96,7 @@ class NextcloudViewModel : ViewModel() {
                             tasks = list.sortedWith(compareBy({ it.status == "COMPLETED" }, { it.due ?: "" }))
                             if (loadingCount > 0) loadingCount--
                         },
-                        onFailure = { err -> errorMessage = "Erreur tâches: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+                        onFailure = { err -> errorMessage = s.tasksError(msg(err)); if (loadingCount > 0) loadingCount-- }
                     )
                 } else { if (loadingCount > 0) loadingCount-- }
             }
@@ -100,7 +106,7 @@ class NextcloudViewModel : ViewModel() {
                         notes = list.sortedWith(compareByDescending<NextcloudNote> { it.favorite }.thenByDescending { it.modified })
                         if (loadingCount > 0) loadingCount--
                     },
-                    onFailure = { err -> errorMessage = "Erreur notes: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+                    onFailure = { err -> errorMessage = s.notesError(msg(err)); if (loadingCount > 0) loadingCount-- }
                 )
             }
             HubTab.FILES -> {
@@ -110,7 +116,7 @@ class NextcloudViewModel : ViewModel() {
                             files = list.sortedWith(compareByDescending<NextcloudFile> { it.isDirectory }.thenBy { it.name.lowercase() })
                             if (loadingCount > 0) loadingCount--
                         },
-                        onFailure = { err -> errorMessage = "Erreur fichiers: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+                        onFailure = { err -> errorMessage = s.filesError(msg(err)); if (loadingCount > 0) loadingCount-- }
                     )
                 } else { if (loadingCount > 0) loadingCount-- }
             }
@@ -139,7 +145,7 @@ class NextcloudViewModel : ViewModel() {
                 refreshData()
             },
             onFailure = { err ->
-                errorMessage = "Connexion échouée: ${err.message}"
+                errorMessage = s.connectionFailed(msg(err))
                 if (loadingCount > 0) loadingCount--
             }
         )
@@ -163,7 +169,7 @@ class NextcloudViewModel : ViewModel() {
                 tasks = list.sortedWith(compareBy({ it.status == "COMPLETED" }, { it.due ?: "" }))
                 if (loadingCount > 0) loadingCount--
             },
-            onFailure = { err -> errorMessage = err.message; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.tasksError(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -172,7 +178,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.saveTask(task.copy(status = updated),
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = "Échec mise à jour tâche: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.taskUpdateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -180,7 +186,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.saveTask(NextcloudTask(uid, summary, description?.ifEmpty { null }, "NEEDS-ACTION", dueDate, selectedTaskListHref),
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = "Création tâche échouée: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.taskCreateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -188,7 +194,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.saveTask(task.copy(summary = summary, description = description?.ifEmpty { null }, due = dueDate?.ifEmpty { null }),
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = "Modification tâche échouée: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.taskEditFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -196,7 +202,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.deleteTask(task,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = "Échec suppression tâche: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.taskDeleteFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -204,7 +210,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.deleteEvent(event.calendarHref, event.id,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = "Suppression échouée: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.eventDeleteFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -212,7 +218,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.saveEvent(calendarHref, event,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = "Création d'événement échouée: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.eventCreateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -221,31 +227,31 @@ class NextcloudViewModel : ViewModel() {
         val updated = event.copy(summary = summary, description = description?.ifEmpty { null }, location = location?.ifEmpty { null }, startTime = startTime, endTime = endTime)
         client?.saveEvent(event.calendarHref, updated,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = "Modification événement échouée: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.eventEditFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
     fun createTaskList(name: String) {
         loadingCount++
         client?.createTaskList(name,
-            onSuccess = { client?.getTaskLists(onSuccess = { list -> taskLists = list; if (loadingCount > 0) loadingCount-- }, onFailure = { err -> errorMessage = err.message; if (loadingCount > 0) loadingCount-- }) },
-            onFailure = { err -> errorMessage = "Création de liste échouée: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onSuccess = { client?.getTaskLists(onSuccess = { list -> taskLists = list; if (loadingCount > 0) loadingCount-- }, onFailure = { err -> errorMessage = s.listCreateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }) },
+            onFailure = { err -> errorMessage = s.listCreateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
     fun renameTaskList(newName: String) {
         loadingCount++
         client?.renameTaskList(selectedTaskListHref, newName,
-            onSuccess = { selectedTaskListName = newName; client?.getTaskLists(onSuccess = { list -> taskLists = list; if (loadingCount > 0) loadingCount-- }, onFailure = { err -> errorMessage = err.message; if (loadingCount > 0) loadingCount-- }) },
-            onFailure = { err -> errorMessage = "Renommer liste échoué: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onSuccess = { selectedTaskListName = newName; client?.getTaskLists(onSuccess = { list -> taskLists = list; if (loadingCount > 0) loadingCount-- }, onFailure = { err -> errorMessage = s.listRenameFailed(msg(err)); if (loadingCount > 0) loadingCount-- }) },
+            onFailure = { err -> errorMessage = s.listRenameFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
     fun deleteTaskList() {
         loadingCount++
         client?.deleteTaskList(selectedTaskListHref,
-            onSuccess = { selectedTaskListHref = ""; selectedTaskListName = ""; tasks = emptyList(); client?.getTaskLists(onSuccess = { list -> taskLists = list; if (loadingCount > 0) loadingCount-- }, onFailure = { err -> errorMessage = err.message; if (loadingCount > 0) loadingCount-- }) },
-            onFailure = { err -> errorMessage = "Suppression de liste échouée: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onSuccess = { selectedTaskListHref = ""; selectedTaskListName = ""; tasks = emptyList(); client?.getTaskLists(onSuccess = { list -> taskLists = list; if (loadingCount > 0) loadingCount-- }, onFailure = { err -> errorMessage = s.listDeleteFailed(msg(err)); if (loadingCount > 0) loadingCount-- }) },
+            onFailure = { err -> errorMessage = s.listDeleteFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -253,7 +259,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.updateNote(note.id, note.title, note.content, note.category, !note.favorite,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = "Échec favori note: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.noteFavFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -261,7 +267,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.createNote(title, content, category,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = "Création note échouée: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.noteCreateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -269,7 +275,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.updateNote(note.id, title, content, category, note.favorite,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = "Mise à jour note échouée: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.noteUpdateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -277,7 +283,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.deleteNote(noteId,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = "Suppression note échouée: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.noteDeleteFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -296,7 +302,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.deleteFile(path,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = "Échec suppression: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.fileDeleteFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -304,7 +310,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.renameFile(path, newName,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = "Renommage échoué: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.fileRenameFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -312,7 +318,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.createFolder(currentFolderPath, name,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = "Erreur création dossier: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.folderCreateError(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -320,7 +326,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.uploadFile(currentFolderPath, fileName, bytes,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = "Import échoué: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.uploadFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -328,7 +334,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.createShareLink(file.path,
             onSuccess = { url -> shareLink = url; if (loadingCount > 0) loadingCount-- },
-            onFailure = { err -> errorMessage = "Lien de partage échoué: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.shareLinkFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 
@@ -336,7 +342,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.downloadFile(fileHref,
             onSuccess = { bytes -> if (loadingCount > 0) loadingCount--; onSuccess(bytes) },
-            onFailure = { err -> errorMessage = "Téléchargement échoué: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.downloadFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 }
