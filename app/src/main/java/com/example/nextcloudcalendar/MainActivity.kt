@@ -1812,6 +1812,7 @@ fun TasksScreen(
     onDeleteList: () -> Unit
 ) {
     var dropdownExpanded by remember { mutableStateOf(false) }
+    var settingsExpanded by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -1819,80 +1820,100 @@ fun TasksScreen(
             .padding(16.dp)
     ) {
         Text("Liste de tâches :", fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 4.dp))
-        Box {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp)
-                    .clickable { dropdownExpanded = true },
-                shape = RoundedCornerShape(8.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(selectedName.ifEmpty { "Sélectionnez..." }, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0082C9))
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Choisir")
-                }
-            }
-            DropdownMenu(
-                expanded = dropdownExpanded,
-                onDismissRequest = { dropdownExpanded = false },
-                modifier = Modifier.fillMaxWidth(0.9f)
-            ) {
-                taskLists.forEach { list ->
-                    DropdownMenuItem(
-                        text = { Text(list.second) },
-                        onClick = {
-                            dropdownExpanded = false
-                            onTaskListSelected(list.first, list.second)
-                        }
-                    )
-                }
-            }
-        }
-
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Button(
-                onClick = onCreateList,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0082C9)),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Ajouter", fontSize = 12.sp, maxLines = 1)
-            }
-            if (selectedName.isNotEmpty()) {
-                Button(
-                    onClick = onRenameList,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEAA000)),
+            Box(modifier = Modifier.weight(1f)) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { dropdownExpanded = true },
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.weight(1f)
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
                 ) {
-                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Renommer", fontSize = 12.sp, maxLines = 1)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(selectedName.ifEmpty { "Sélectionnez..." }, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0082C9))
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = "Choisir")
+                    }
                 }
-                Button(
-                    onClick = onDeleteList,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.weight(1f)
+                DropdownMenu(
+                    expanded = dropdownExpanded,
+                    onDismissRequest = { dropdownExpanded = false },
+                    modifier = Modifier.fillMaxWidth(0.8f)
                 ) {
-                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Supprimer", fontSize = 12.sp, maxLines = 1)
+                    taskLists.forEach { list ->
+                        DropdownMenuItem(
+                            text = { Text(list.second) },
+                            onClick = {
+                                dropdownExpanded = false
+                                onTaskListSelected(list.first, list.second)
+                            }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Box {
+                Card(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .clickable { settingsExpanded = true },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Paramètres de la liste",
+                            tint = Color(0xFF0082C9)
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = settingsExpanded,
+                    onDismissRequest = { settingsExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Créer une liste") },
+                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF0082C9)) },
+                        onClick = {
+                            settingsExpanded = false
+                            onCreateList()
+                        }
+                    )
+                    if (selectedName.isNotEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text("Renommer la liste") },
+                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFFEAA000)) },
+                            onClick = {
+                                settingsExpanded = false
+                                onRenameList()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Supprimer la liste") },
+                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFD32F2F)) },
+                            onClick = {
+                                settingsExpanded = false
+                                onDeleteList()
+                            }
+                        )
+                    }
                 }
             }
         }
