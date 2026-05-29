@@ -277,6 +277,19 @@ class CalDavClient(
         })
     }
 
+    fun deleteEvent(calendarHref: String, eventId: String, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
+        val url = if (calendarHref.endsWith("/")) "$baseUrl$calendarHref$eventId.ics"
+                  else "$baseUrl$calendarHref/$eventId.ics"
+        val request = Request.Builder().url(url).addHeader("Authorization", credentials).delete().build()
+        client.newCall(request).enqueueTracked(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                if (response.isSuccessful || response.code == 204) runOnMain { onSuccess() }
+                else runOnMain { onFailure(Exception("HTTP Error: ${response.code}")) }
+            }
+        })
+    }
+
     // OCS Shares API — creates a public link (shareType=3) for the given WebDAV path
     fun createShareLink(fileHref: String, onSuccess: (String) -> Unit, onFailure: (Exception) -> Unit) {
         val sharePath = fileHref.replaceFirst(Regex("/remote\\.php/dav/files/[^/]+"), "")

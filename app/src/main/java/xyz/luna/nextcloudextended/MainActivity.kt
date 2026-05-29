@@ -87,6 +87,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     var editingNote by remember { mutableStateOf<NextcloudNote?>(null) }
     var viewingNote by remember { mutableStateOf<NextcloudNote?>(null) }
     var editingEvent by remember { mutableStateOf<CalendarEvent?>(null) }
+    var detailEvent by remember { mutableStateOf<CalendarEvent?>(null) }
     var editingTask by remember { mutableStateOf<NextcloudTask?>(null) }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -162,7 +163,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
             } else {
                 PullToRefreshBox(isRefreshing = vm.isLoading, onRefresh = { vm.refreshData() }, modifier = Modifier.fillMaxSize()) {
                     when (vm.currentTab) {
-                        HubTab.CALENDAR -> CalendarMultiViewScreen(calendarInfos = vm.calendarInfos, activeCalendarHrefs = vm.activeCalendarHrefs, events = vm.events, calendarViewMode = vm.calendarViewMode, selectedDate = vm.selectedDate, onToggleCalendar = { vm.toggleCalendar(it) }, onViewModeChange = { vm.calendarViewMode = it }, onDateChange = { vm.selectedDate = it }, onEditEvent = { editingEvent = it })
+                        HubTab.CALENDAR -> CalendarMultiViewScreen(calendarInfos = vm.calendarInfos, activeCalendarHrefs = vm.activeCalendarHrefs, events = vm.events, calendarViewMode = vm.calendarViewMode, selectedDate = vm.selectedDate, onToggleCalendar = { vm.toggleCalendar(it) }, onViewModeChange = { vm.calendarViewMode = it }, onDateChange = { vm.selectedDate = it }, onEventTap = { detailEvent = it })
                         HubTab.TASKS -> TasksScreen(taskLists = vm.taskLists, selectedName = vm.selectedTaskListName, tasks = vm.tasks, onTaskListSelected = { href, name -> vm.loadTaskList(href, name) }, onToggleStatus = { vm.toggleTaskStatus(it) }, onDeleteTask = { vm.deleteTask(it) }, onEditTask = { editingTask = it }, onCreateList = { showCreateTaskListDialog = true }, onRenameList = { showRenameTaskListDialog = true }, onDeleteList = { showDeleteTaskListDialog = true })
                         HubTab.NOTES -> NotesScreen(notes = vm.notes, onNoteSelected = { viewingNote = it }, onToggleFavorite = { vm.toggleNoteFavorite(it) })
                         HubTab.FILES -> FilesScreen(
@@ -195,6 +196,17 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                 }
             }
         }
+    }
+
+    // Event detail sheet
+    detailEvent?.let { event ->
+        EventDetailSheet(
+            event = event,
+            calendarInfos = vm.calendarInfos,
+            onDismiss = { detailEvent = null },
+            onEdit = { editingEvent = event },
+            onDelete = { vm.deleteEvent(event) }
+        )
     }
 
     // Share link

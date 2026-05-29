@@ -200,6 +200,14 @@ class NextcloudViewModel : ViewModel() {
         )
     }
 
+    fun deleteEvent(event: CalendarEvent) {
+        loadingCount++
+        client?.deleteEvent(event.calendarHref, event.id,
+            onSuccess = { refreshAndStop() },
+            onFailure = { err -> errorMessage = "Suppression échouée: ${err.message}"; if (loadingCount > 0) loadingCount-- }
+        )
+    }
+
     fun createEvent(event: CalendarEvent, calendarHref: String) {
         loadingCount++
         client?.saveEvent(calendarHref, event,
