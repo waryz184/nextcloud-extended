@@ -317,7 +317,7 @@ fun NextcloudHubApp() {
                             refreshData()
                         },
                         label = { Text("Drive") },
-                        icon = { Text("📁", fontSize = 20.sp) }
+                        icon = { Icon(Icons.Default.Folder, contentDescription = "Drive") }
                     )
                 }
             }
