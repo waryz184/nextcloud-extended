@@ -497,6 +497,27 @@ class CalDavClient(
         return calendars
     }
 
+    private fun unescapeXml(xml: String): String {
+        val decoded = xml.replace("&amp;", "&")
+                         .replace("&lt;", "<")
+                         .replace("&gt;", ">")
+                         .replace("&quot;", "\"")
+                         .replace("&apos;", "'")
+        
+        val numericEntityRegex = Regex("&#([0-9]+);")
+        val hexEntityRegex = Regex("&#x([0-9a-fA-F]+);")
+        
+        var result = numericEntityRegex.replace(decoded) { match ->
+            val code = match.groupValues[1].toInt()
+            code.toChar().toString()
+        }
+        result = hexEntityRegex.replace(result) { match ->
+            val code = match.groupValues[1].toInt(16)
+            code.toChar().toString()
+        }
+        return result
+    }
+
     // Parse events from REPORT XML response containing multiple iCalendar <c:calendar-data> tags
     private fun parseEventsFromReport(xml: String): List<CalendarEvent> {
         val events = mutableListOf<CalendarEvent>()
@@ -504,8 +525,7 @@ class CalDavClient(
         
         val matches = calDataRegex.findAll(xml)
         for (m in matches) {
-            val ics = m.groupValues[1]
-                .let { Html.fromHtml(it, Html.FROM_HTML_MODE_LEGACY).toString() }
+            val ics = unescapeXml(m.groupValues[1])
             events.addAll(parseIcs(ics))
         }
         return events
@@ -518,8 +538,7 @@ class CalDavClient(
         
         val matches = calDataRegex.findAll(xml)
         for (m in matches) {
-            val ics = m.groupValues[1]
-                .let { Html.fromHtml(it, Html.FROM_HTML_MODE_LEGACY).toString() }
+            val ics = unescapeXml(m.groupValues[1])
             tasks.addAll(parseIcsTasks(ics, calendarHref))
         }
         return tasks
@@ -527,6 +546,7 @@ class CalDavClient(
 
     private fun parseIcsTasks(icsContent: String, calendarHref: String): List<NextcloudTask> {
         val tasks = mutableListOf<NextcloudTask>()
+        val unfolded = icsContent.replace("\r\n ", "").replace("\r\n\t", "").replace("\n ", "").replace("\n\t", "")
         val vtodoRegex = Regex("BEGIN:VTODO[\\s\\S]*?END:VTODO")
         
         val summaryRegex = Regex("SUMMARY:(.*)")
@@ -535,7 +555,7 @@ class CalDavClient(
         val dueRegex = Regex("DUE(?:;[^:]*)?:(.*)")
         val uidRegex = Regex("UID:(.*)")
 
-        val matches = vtodoRegex.findAll(icsContent)
+        val matches = vtodoRegex.findAll(unfolded)
         for (match in matches) {
             val todoStr = match.value
             val uid = uidRegex.find(todoStr)?.groupValues?.get(1)?.trim() ?: UUID.randomUUID().toString()
@@ -552,6 +572,7 @@ class CalDavClient(
     // Parse standard iCalendar text
     private fun parseIcs(icsContent: String): List<CalendarEvent> {
         val events = mutableListOf<CalendarEvent>()
+        val unfolded = icsContent.replace("\r\n ", "").replace("\r\n\t", "").replace("\n ", "").replace("\n\t", "")
         val veventRegex = Regex("BEGIN:VEVENT[\\s\\S]*?END:VEVENT")
         
         val summaryRegex = Regex("SUMMARY:(.*)")
@@ -561,7 +582,7 @@ class CalDavClient(
         val locationRegex = Regex("LOCATION:(.*)")
         val uidRegex = Regex("UID:(.*)")
 
-        val matches = veventRegex.findAll(icsContent)
+        val matches = veventRegex.findAll(unfolded)
         for (match in matches) {
             val eventStr = match.value
             val uid = uidRegex.find(eventStr)?.groupValues?.get(1)?.trim() ?: UUID.randomUUID().toString()
