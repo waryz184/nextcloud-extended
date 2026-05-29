@@ -6,5 +6,6 @@ data class CalendarEvent(
     val description: String?,
     val startTime: String?,
     val endTime: String?,
-    val location: String?
+    val location: String?,
+    val calendarHref: String = ""
 )
