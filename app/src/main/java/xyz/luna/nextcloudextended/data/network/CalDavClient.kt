@@ -323,6 +323,39 @@ class CalDavClient(
         })
     }
 
+    // OCS Direct Editing API — returns an editor URL for Collabora Online or OnlyOffice
+    fun getOnlineEditorUrl(fileHref: String, onSuccess: (String) -> Unit, onFailure: (Exception) -> Unit) {
+        val filePath = fileHref.replaceFirst(Regex("/remote\\.php/dav/files/[^/]+"), "")
+        val url = "$baseUrl/ocs/v2.php/apps/files/api/v1/directEditing/open"
+        val formBody = "path=${java.net.URLEncoder.encode(filePath, "UTF-8")}"
+
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", credentials)
+            .addHeader("OCS-APIRequest", "true")
+            .addHeader("Accept", "application/json")
+            .post(formBody.toRequestBody("application/x-www-form-urlencoded".toMediaType()))
+            .build()
+
+        client.newCall(request).enqueueTracked(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                val body = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    runOnMain { onFailure(Exception("HTTP ${response.code}")) }
+                    return
+                }
+                try {
+                    val editUrl = org.json.JSONObject(body)
+                        .getJSONObject("ocs").getJSONObject("data").getString("url")
+                    runOnMain { onSuccess(editUrl) }
+                } catch (e: Exception) {
+                    runOnMain { onFailure(Exception("Collabora/OnlyOffice not available on this server")) }
+                }
+            }
+        })
+    }
+
     // Downloads a file's raw bytes for in-app opening
     fun downloadFile(fileHref: String, onSuccess: (ByteArray) -> Unit, onFailure: (Exception) -> Unit) {
         val request = Request.Builder()

@@ -46,6 +46,10 @@ import java.util.UUID
 
 enum class HubTab { CALENDAR, TASKS, NOTES, FILES }
 enum class CalendarViewMode { DAY, WEEK, MONTH, YEAR }
+enum class OfficeViewerType { POI, ONLINE }
+
+private val officeExtensions = setOf("xlsx", "xls", "docx", "pptx", "csv")
+private data class OfficeViewData(val fileName: String, val bytes: ByteArray?, val filePath: String)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,6 +86,9 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         username = sharedPrefs.getString("username", "") ?: ""
         password = sharedPrefs.getString("password", "") ?: ""
         allowInsecureHttp = sharedPrefs.getBoolean("allow_insecure_http", false)
+        vm.officeViewerPref = sharedPrefs.getString("office_viewer_pref", null)
+            ?.let { runCatching { OfficeViewerType.valueOf(it) }.getOrNull() }
+            ?: OfficeViewerType.POI
     }
     val s = stringsFor(language)
 
@@ -101,6 +108,8 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     var detailEvent by remember { mutableStateOf<CalendarEvent?>(null) }
     var editingTask by remember { mutableStateOf<NextcloudTask?>(null) }
     var pdfToView by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
+    var officeToView by remember { mutableStateOf<OfficeViewData?>(null) }
+    var showSettings by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -133,10 +142,13 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
             TopAppBar(
                 title = { Text(if (!vm.isConnected) "Nextcloud Extended" else when (vm.currentTab) { HubTab.CALENDAR -> s.tabCalendar; HubTab.TASKS -> s.tabTasks; HubTab.NOTES -> s.tabNotes; HubTab.FILES -> s.tabFiles }) },
                 actions = {
-                    if (vm.isConnected) IconButton(onClick = {
-                        vm.disconnect { sharedPrefs.edit().clear().apply() }
-                        coroutineScope.launch { snackbarHostState.showSnackbar(s.loggedOut) }
-                    }) { Icon(Icons.Default.ExitToApp, s.logout) }
+                    if (vm.isConnected) {
+                        IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, s.settings) }
+                        IconButton(onClick = {
+                            vm.disconnect { sharedPrefs.edit().clear().apply() }
+                            coroutineScope.launch { snackbarHostState.showSnackbar(s.loggedOut) }
+                        }) { Icon(Icons.Default.ExitToApp, s.logout) }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary, titleContentColor = MaterialTheme.colorScheme.onPrimary, actionIconContentColor = MaterialTheme.colorScheme.onPrimary, scrolledContainerColor = MaterialTheme.colorScheme.primary),
                 scrollBehavior = scrollBehavior
@@ -183,29 +195,53 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                         HubTab.FILES -> FilesScreen(
                             currentFolderPath = vm.currentFolderPath, files = vm.files,
                             onFileClick = { file ->
-                                if (file.isDirectory) vm.navigateToFolder(file.path)
-                                else if (file.name.endsWith(".pdf", ignoreCase = true)) {
-                                    vm.downloadFile(file.path) { bytes -> pdfToView = Pair(file.name, bytes) }
-                                } else {
-                                    val fileUrl = vm.client?.buildFileUrl(file.path); val auth = vm.client?.getAuthorizationHeader()
-                                    if (fileUrl != null && auth != null) {
-                                        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
-                                        dm.enqueue(android.app.DownloadManager.Request(Uri.parse(fileUrl)).addRequestHeader("Authorization", auth).setDestinationInExternalFilesDir(context, android.os.Environment.DIRECTORY_DOWNLOADS, file.name).setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED).setTitle(file.name).setDescription("Nextcloud Extended"))
-                                        coroutineScope.launch { snackbarHostState.showSnackbar(s.downloadStarted(file.name)) }
+                                val ext = file.name.substringAfterLast('.', "").lowercase()
+                                when {
+                                    file.isDirectory -> vm.navigateToFolder(file.path)
+                                    file.name.endsWith(".pdf", ignoreCase = true) ->
+                                        vm.downloadFile(file.path) { bytes -> pdfToView = Pair(file.name, bytes) }
+                                    ext in officeExtensions -> {
+                                        if (vm.officeViewerPref == OfficeViewerType.POI) {
+                                            vm.downloadFile(file.path) { bytes ->
+                                                officeToView = OfficeViewData(file.name, bytes, file.path)
+                                            }
+                                        } else {
+                                            officeToView = OfficeViewData(file.name, null, file.path)
+                                        }
+                                    }
+                                    else -> {
+                                        val fileUrl = vm.client?.buildFileUrl(file.path); val auth = vm.client?.getAuthorizationHeader()
+                                        if (fileUrl != null && auth != null) {
+                                            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+                                            dm.enqueue(android.app.DownloadManager.Request(Uri.parse(fileUrl)).addRequestHeader("Authorization", auth).setDestinationInExternalFilesDir(context, android.os.Environment.DIRECTORY_DOWNLOADS, file.name).setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED).setTitle(file.name).setDescription("Nextcloud Extended"))
+                                            coroutineScope.launch { snackbarHostState.showSnackbar(s.downloadStarted(file.name)) }
+                                        }
                                     }
                                 }
                             },
                             onOpenFile = { file ->
-                                if (file.name.endsWith(".pdf", ignoreCase = true)) {
-                                    vm.downloadFile(file.path) { bytes -> pdfToView = Pair(file.name, bytes) }
-                                } else {
-                                    vm.downloadFile(file.path) { bytes ->
-                                        try {
-                                            val cacheFile = File(context.cacheDir, file.name); cacheFile.writeBytes(bytes)
-                                            val uri = FileProvider.getUriForFile(context, "xyz.luna.nextcloudextended.provider", cacheFile)
-                                            val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.name.substringAfterLast('.', "").lowercase()) ?: "*/*"
-                                            context.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), s.openWith))
-                                        } catch (e: Exception) { vm.errorMessage = s.cannotOpen(e.message ?: "") }
+                                val ext = file.name.substringAfterLast('.', "").lowercase()
+                                when {
+                                    file.name.endsWith(".pdf", ignoreCase = true) ->
+                                        vm.downloadFile(file.path) { bytes -> pdfToView = Pair(file.name, bytes) }
+                                    ext in officeExtensions -> {
+                                        if (vm.officeViewerPref == OfficeViewerType.POI) {
+                                            vm.downloadFile(file.path) { bytes ->
+                                                officeToView = OfficeViewData(file.name, bytes, file.path)
+                                            }
+                                        } else {
+                                            officeToView = OfficeViewData(file.name, null, file.path)
+                                        }
+                                    }
+                                    else -> {
+                                        vm.downloadFile(file.path) { bytes ->
+                                            try {
+                                                val cacheFile = File(context.cacheDir, file.name); cacheFile.writeBytes(bytes)
+                                                val uri = FileProvider.getUriForFile(context, "xyz.luna.nextcloudextended.provider", cacheFile)
+                                                val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
+                                                context.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), s.openWith))
+                                            } catch (e: Exception) { vm.errorMessage = s.cannotOpen(e.message ?: "") }
+                                        }
                                     }
                                 }
                             },
@@ -360,6 +396,46 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 PdfViewerScreen(fileName = name, pdfBytes = bytes, onDismiss = { pdfToView = null })
+            }
+        }
+    }
+
+    // Office Viewer
+    officeToView?.let { data ->
+        Dialog(
+            onDismissRequest = { officeToView = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true, dismissOnClickOutside = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                OfficeViewerScreen(
+                    fileName = data.fileName,
+                    fileBytes = data.bytes,
+                    filePath = data.filePath,
+                    viewerType = vm.officeViewerPref,
+                    onDismiss = { officeToView = null },
+                    onGetOnlineEditorUrl = { onSuccess, onFailure ->
+                        vm.getOnlineEditorUrl(data.filePath, onSuccess, onFailure)
+                    }
+                )
+            }
+        }
+    }
+
+    // Settings
+    if (showSettings) {
+        Dialog(
+            onDismissRequest = { showSettings = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true, dismissOnClickOutside = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                SettingsScreen(
+                    officeViewerPref = vm.officeViewerPref,
+                    onOfficeViewerPrefChange = { pref ->
+                        vm.officeViewerPref = pref
+                        sharedPrefs.edit().putString("office_viewer_pref", pref.name).apply()
+                    },
+                    onDismiss = { showSettings = false }
+                )
             }
         }
     }

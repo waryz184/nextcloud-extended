@@ -22,3 +22,20 @@
 
 # org.json
 -keep class org.json.** { *; }
+
+# Apache POI
+-dontwarn org.apache.poi.**
+-dontwarn org.apache.xmlbeans.**
+-dontwarn com.microsoft.schemas.**
+-dontwarn org.openxmlformats.**
+-dontwarn org.etsi.**
+-dontwarn org.w3.x2000.**
+-keep class org.apache.xmlbeans.** { *; }
+-keep class schemaorg_apache_xmlbeans.** { *; }
+# POI transitive deps (log4j2 optional integrations not present on Android)
+-dontwarn aQute.bnd.annotation.**
+-dontwarn org.osgi.**
+-dontwarn org.apache.logging.log4j.**
+-dontwarn com.lmax.disruptor.**
+-dontwarn com.conversantmedia.**
+-dontwarn com.fasterxml.jackson.**

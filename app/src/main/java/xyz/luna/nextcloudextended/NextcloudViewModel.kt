@@ -41,6 +41,8 @@ class NextcloudViewModel : ViewModel() {
     var currentFolderPath by mutableStateOf("")
     var files by mutableStateOf<List<NextcloudFile>>(emptyList())
 
+    var officeViewerPref by mutableStateOf(OfficeViewerType.POI)
+
     var errorMessage by mutableStateOf<String?>(null)
     var shareLink by mutableStateOf<String?>(null)
 
@@ -335,6 +337,14 @@ class NextcloudViewModel : ViewModel() {
         client?.createShareLink(file.path,
             onSuccess = { url -> shareLink = url; if (loadingCount > 0) loadingCount-- },
             onFailure = { err -> errorMessage = s.shareLinkFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+        )
+    }
+
+    fun getOnlineEditorUrl(fileHref: String, onSuccess: (String) -> Unit, onFailure: (Exception) -> Unit) {
+        loadingCount++
+        client?.getOnlineEditorUrl(fileHref,
+            onSuccess = { url -> if (loadingCount > 0) loadingCount--; onSuccess(url) },
+            onFailure = { err -> if (loadingCount > 0) loadingCount--; onFailure(err) }
         )
     }
 

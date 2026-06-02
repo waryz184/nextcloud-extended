@@ -153,6 +153,16 @@ class Strings(
     val loadingPdf: String,
     val pageOf: (Int, Int) -> String,
     val pdfError: String,
+    // Settings
+    val settings: String,
+    val officeViewerSection: String,
+    val officeViewerPoi: String,
+    val officeViewerPoiDesc: String,
+    val officeViewerOnline: String,
+    val officeViewerOnlineDesc: String,
+    // Office Viewer
+    val documentError: String,
+    val collaboraLoadFailed: String,
 )
 
 val EnStrings = Strings(
@@ -286,6 +296,14 @@ val EnStrings = Strings(
     loadingPdf = "Loading document…",
     pageOf = { page, total -> "Page $page / $total" },
     pdfError = "Cannot open this PDF",
+    settings = "Settings",
+    officeViewerSection = "Office Documents",
+    officeViewerPoi = "Local viewer (Apache POI)",
+    officeViewerPoiDesc = "Renders XLSX, XLS, DOCX and PPTX directly on device — no server required. Basic formatting only.",
+    officeViewerOnline = "Collabora / OnlyOffice",
+    officeViewerOnlineDesc = "Opens documents in your Nextcloud server's office suite. Requires the Collabora Online or OnlyOffice plugin to be installed.",
+    documentError = "Cannot open this document",
+    collaboraLoadFailed = "Collabora / OnlyOffice is not available on this server",
 )
 
 val FrStrings = Strings(
@@ -419,6 +437,14 @@ val FrStrings = Strings(
     loadingPdf = "Chargement du document…",
     pageOf = { page, total -> "Page $page / $total" },
     pdfError = "Impossible d'ouvrir ce PDF",
+    settings = "Paramètres",
+    officeViewerSection = "Documents Office",
+    officeViewerPoi = "Visionneur local (Apache POI)",
+    officeViewerPoiDesc = "Ouvre XLSX, XLS, DOCX et PPTX directement sur l'appareil — aucun serveur requis. Mise en forme basique uniquement.",
+    officeViewerOnline = "Collabora / OnlyOffice",
+    officeViewerOnlineDesc = "Ouvre les documents dans la suite bureautique de votre serveur Nextcloud. Nécessite le plugin Collabora Online ou OnlyOffice.",
+    documentError = "Impossible d'ouvrir ce document",
+    collaboraLoadFailed = "Collabora / OnlyOffice n'est pas disponible sur ce serveur",
 )
 
 fun stringsFor(language: AppLanguage): Strings = when (language) {
