@@ -28,6 +28,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.security.crypto.EncryptedSharedPreferences
@@ -99,6 +100,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     var editingEvent by remember { mutableStateOf<CalendarEvent?>(null) }
     var detailEvent by remember { mutableStateOf<CalendarEvent?>(null) }
     var editingTask by remember { mutableStateOf<NextcloudTask?>(null) }
+    var pdfToView by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -182,7 +184,9 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                             currentFolderPath = vm.currentFolderPath, files = vm.files,
                             onFileClick = { file ->
                                 if (file.isDirectory) vm.navigateToFolder(file.path)
-                                else {
+                                else if (file.name.endsWith(".pdf", ignoreCase = true)) {
+                                    vm.downloadFile(file.path) { bytes -> pdfToView = Pair(file.name, bytes) }
+                                } else {
                                     val fileUrl = vm.client?.buildFileUrl(file.path); val auth = vm.client?.getAuthorizationHeader()
                                     if (fileUrl != null && auth != null) {
                                         val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
@@ -192,13 +196,17 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                                 }
                             },
                             onOpenFile = { file ->
-                                vm.downloadFile(file.path) { bytes ->
-                                    try {
-                                        val cacheFile = File(context.cacheDir, file.name); cacheFile.writeBytes(bytes)
-                                        val uri = FileProvider.getUriForFile(context, "xyz.luna.nextcloudextended.provider", cacheFile)
-                                        val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.name.substringAfterLast('.', "").lowercase()) ?: "*/*"
-                                        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), s.openWith))
-                                    } catch (e: Exception) { vm.errorMessage = s.cannotOpen(e.message ?: "") }
+                                if (file.name.endsWith(".pdf", ignoreCase = true)) {
+                                    vm.downloadFile(file.path) { bytes -> pdfToView = Pair(file.name, bytes) }
+                                } else {
+                                    vm.downloadFile(file.path) { bytes ->
+                                        try {
+                                            val cacheFile = File(context.cacheDir, file.name); cacheFile.writeBytes(bytes)
+                                            val uri = FileProvider.getUriForFile(context, "xyz.luna.nextcloudextended.provider", cacheFile)
+                                            val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.name.substringAfterLast('.', "").lowercase()) ?: "*/*"
+                                            context.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), s.openWith))
+                                        } catch (e: Exception) { vm.errorMessage = s.cannotOpen(e.message ?: "") }
+                                    }
                                 }
                             },
                             onShareFile = { vm.createShareLink(it) },
@@ -342,6 +350,18 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         var noteTitle by remember { mutableStateOf(note.title) }; var noteContent by remember { mutableStateOf(note.content) }; var noteCat by remember { mutableStateOf(note.category) }
         AlertDialog(onDismissRequest = { editingNote = null }, title = { Text(s.editNote) }, text = { Column(modifier = Modifier.verticalScroll(rememberScrollState())) { OutlinedTextField(value = noteTitle, onValueChange = { noteTitle = it }, label = { Text(s.title) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)); OutlinedTextField(value = noteCat, onValueChange = { noteCat = it }, label = { Text(s.category) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)); OutlinedTextField(value = noteContent, onValueChange = { noteContent = it }, label = { Text(s.content) }, minLines = 5, modifier = Modifier.fillMaxWidth()) } },
             confirmButton = { Button(onClick = { if (noteTitle.isNotEmpty()) { editingNote = null; vm.updateNote(note, noteTitle, noteContent, noteCat) } }) { Text(s.save) } }, dismissButton = { TextButton(onClick = { editingNote = null }) { Text(s.cancel) } })
+    }
+
+    // PDF Viewer
+    pdfToView?.let { (name, bytes) ->
+        Dialog(
+            onDismissRequest = { pdfToView = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true, dismissOnClickOutside = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                PdfViewerScreen(fileName = name, pdfBytes = bytes, onDismiss = { pdfToView = null })
+            }
+        }
     }
     }
 }

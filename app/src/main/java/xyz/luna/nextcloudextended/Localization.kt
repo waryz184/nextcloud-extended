@@ -149,6 +149,10 @@ class Strings(
     val uploadFailed: (String) -> String,
     val shareLinkFailed: (String) -> String,
     val downloadFailed: (String) -> String,
+    // PDF Viewer
+    val loadingPdf: String,
+    val pageOf: (Int, Int) -> String,
+    val pdfError: String,
 )
 
 val EnStrings = Strings(
@@ -279,6 +283,9 @@ val EnStrings = Strings(
     uploadFailed = { "Upload failed: $it" },
     shareLinkFailed = { "Share link failed: $it" },
     downloadFailed = { "Download failed: $it" },
+    loadingPdf = "Loading document…",
+    pageOf = { page, total -> "Page $page / $total" },
+    pdfError = "Cannot open this PDF",
 )
 
 val FrStrings = Strings(
@@ -409,6 +416,9 @@ val FrStrings = Strings(
     uploadFailed = { "Import échoué : $it" },
     shareLinkFailed = { "Lien de partage échoué : $it" },
     downloadFailed = { "Téléchargement échoué : $it" },
+    loadingPdf = "Chargement du document…",
+    pageOf = { page, total -> "Page $page / $total" },
+    pdfError = "Impossible d'ouvrir ce PDF",
 )
 
 fun stringsFor(language: AppLanguage): Strings = when (language) {
