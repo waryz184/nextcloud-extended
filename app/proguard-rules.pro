@@ -39,3 +39,10 @@
 -dontwarn com.lmax.disruptor.**
 -dontwarn com.conversantmedia.**
 -dontwarn com.fasterxml.jackson.**
+
+# StAX implementation for Apache XMLBeans / POI OOXML on Android
+# aalto-xml registers itself via META-INF/services — keep the impl classes so R8 doesn't strip them
+-keep class com.fasterxml.aalto.** { *; }
+-keep class * implements javax.xml.stream.XMLInputFactory { *; }
+-keep class * implements javax.xml.stream.XMLOutputFactory { *; }
+-keep class * implements javax.xml.stream.XMLEventFactory { *; }
