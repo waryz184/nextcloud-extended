@@ -22,8 +22,8 @@ android {
         applicationId = "xyz.luna.nextcloudextended"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "2.1.4"
+        versionCode = 14
+        versionName = "2.1.5"
         multiDexEnabled = true
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -99,7 +99,10 @@ dependencies {
 
     // Apache POI for Office document viewing (XLSX, XLS, DOCX, PPTX)
     implementation("org.apache.poi:poi-ooxml:5.2.5")
-    // StAX implementation required by XMLBeans (used by POI OOXML) — Android's built-in StAX is incomplete
+    // Android ships NO javax.xml.stream (StAX) API — POI/XMLBeans needs it. Provide API + impl:
+    //   stax-api 1.0-2 = the JSR-173 API (javax.xml.stream.* only, no conflict with Android)
+    //   aalto-xml      = a lightweight StAX implementation
+    implementation("javax.xml.stream:stax-api:1.0-2")
     implementation("com.fasterxml:aalto-xml:1.3.2")
     
     testImplementation("junit:junit:4.13.2")

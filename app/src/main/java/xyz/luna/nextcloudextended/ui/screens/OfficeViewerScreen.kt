@@ -1,5 +1,6 @@
 package xyz.luna.nextcloudextended.ui.screens
 
+import android.util.Log
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
@@ -82,6 +83,7 @@ private fun PoiViewerContent(fileName: String, fileBytes: ByteArray, onDismiss: 
     val content by produceState<OfficeContent?>(null) {
         value = withContext(Dispatchers.IO) {
             try {
+                configureStaxFactories()
                 when (ext) {
                     "xlsx", "xls" -> parseSpreadsheet(fileBytes)
                     "docx" -> parseDocument(fileBytes)
@@ -90,7 +92,8 @@ private fun PoiViewerContent(fileName: String, fileBytes: ByteArray, onDismiss: 
                     else -> OfficeContent.Error(".$ext")
                 }
             } catch (e: Throwable) {
-                OfficeContent.Error(e.message ?: e::class.simpleName ?: "")
+                Log.e("OfficeViewer", "Failed to parse $fileName", e)
+                OfficeContent.Error(describeThrowable(e))
             }
         }
     }
@@ -320,6 +323,25 @@ private fun CsvView(content: OfficeContent.Csv) {
 }
 
 // ── POI parsing ────────────────────────────────────────────────────────────────
+
+// Android ships no javax.xml.stream API and the stax-api factory-finder would otherwise
+// fall back to nonexistent reference impls (e.g. com.bea.xml.stream.*). Pin the factories
+// to aalto-xml explicitly so XMLBeans/POI can initialise its StAX stack on Android.
+private fun configureStaxFactories() {
+    System.setProperty("javax.xml.stream.XMLInputFactory", "com.fasterxml.aalto.stax.InputFactoryImpl")
+    System.setProperty("javax.xml.stream.XMLOutputFactory", "com.fasterxml.aalto.stax.OutputFactoryImpl")
+    System.setProperty("javax.xml.stream.XMLEventFactory", "com.fasterxml.aalto.stax.EventFactoryImpl")
+}
+
+// Walks the full cause chain so the on-screen error shows the real root cause rather than a
+// bare "ExceptionInInitializerError" (whose own message is usually null).
+private fun describeThrowable(t: Throwable): String {
+    val chain = generateSequence(t) { it.cause }.toList()
+    return chain.joinToString("\n→ ") { e ->
+        val name = e::class.qualifiedName ?: e::class.simpleName ?: "?"
+        if (e.message.isNullOrBlank()) name else "$name: ${e.message}"
+    }
+}
 
 private fun parseSpreadsheet(bytes: ByteArray): OfficeContent.Spreadsheet {
     val wb = WorkbookFactory.create(ByteArrayInputStream(bytes))
