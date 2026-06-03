@@ -23,15 +23,22 @@
 # org.json
 -keep class org.json.** { *; }
 
-# Apache POI
+# Apache POI — keep ALL classes intact: POI uses Class.forName() and ServiceLoader
+# internally to instantiate its own classes by original name; R8 renaming breaks this
 -dontwarn org.apache.poi.**
 -dontwarn org.apache.xmlbeans.**
 -dontwarn com.microsoft.schemas.**
 -dontwarn org.openxmlformats.**
 -dontwarn org.etsi.**
 -dontwarn org.w3.x2000.**
+-keep class org.apache.poi.** { *; }
 -keep class org.apache.xmlbeans.** { *; }
 -keep class schemaorg_apache_xmlbeans.** { *; }
+-keep class org.openxmlformats.** { *; }
+-keep class com.microsoft.schemas.** { *; }
+# POI transitive deps — AWT/desktop-only classes absent on Android
+-dontwarn java.awt.**
+-dontwarn com.graphbuilder.**
 # POI transitive deps (log4j2 optional integrations not present on Android)
 -dontwarn aQute.bnd.annotation.**
 -dontwarn org.osgi.**
