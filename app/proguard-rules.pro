@@ -41,8 +41,14 @@
 -dontwarn com.fasterxml.jackson.**
 
 # StAX implementation for Apache XMLBeans / POI OOXML on Android
+# javax.xml.stream exists at runtime on Android but is absent from R8's bootclasspath — suppress errors
+-dontwarn javax.xml.stream.**
+-dontwarn javax.xml.stream.events.**
+-dontwarn javax.xml.stream.util.**
+-dontwarn org.codehaus.stax2.**
 # aalto-xml registers itself via META-INF/services — keep the impl classes so R8 doesn't strip them
 -keep class com.fasterxml.aalto.** { *; }
+-keep class org.codehaus.stax2.** { *; }
 -keep class * implements javax.xml.stream.XMLInputFactory { *; }
 -keep class * implements javax.xml.stream.XMLOutputFactory { *; }
 -keep class * implements javax.xml.stream.XMLEventFactory { *; }
