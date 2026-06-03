@@ -89,8 +89,8 @@ private fun PoiViewerContent(fileName: String, fileBytes: ByteArray, onDismiss: 
                     "csv" -> parseCsv(fileBytes)
                     else -> OfficeContent.Error(".$ext")
                 }
-            } catch (e: Exception) {
-                OfficeContent.Error(e.message ?: "")
+            } catch (e: Throwable) {
+                OfficeContent.Error(e.message ?: e::class.simpleName ?: "")
             }
         }
     }
