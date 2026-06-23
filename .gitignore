@@ -22,6 +22,8 @@ Thumbs.db
 *.aab
 *.aar
 *.jar
+# Exception: the Gradle wrapper jar must be committed for reproducible builds
+!gradle/wrapper/gradle-wrapper.jar
 *.idsig
 
 # Signing — NEVER commit these
