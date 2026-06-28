@@ -1,10 +1,10 @@
 # Nextcloud Extended
 
 A native Android client for self-hosted Nextcloud servers. It brings your **calendar, tasks,
-notes and files** together in a single app, built with **Kotlin** and **Jetpack Compose**
-(Material 3). It talks directly to standard Nextcloud protocols — CalDAV, WebDAV and the Notes
-API — so there is no backend in between: your data only ever travels between your device and your
-own server.
+notes, contacts and files** together in a single app, built with **Kotlin** and **Jetpack Compose**
+(Material 3). It talks directly to standard Nextcloud protocols — CalDAV, CardDAV, WebDAV and the
+Notes API — so there is no backend in between: your data only ever travels between your device and
+your own server.
 
 The app is **bilingual (English / French)**: pick your language on the login screen, or let it
 follow your device locale on first launch.
@@ -27,6 +27,13 @@ follow your device locale on first launch.
 - Create, edit and delete notes with categories and favourites.
 - Markdown rendering for viewing.
 - Full-text search.
+
+### 👤 Contacts (CardDAV)
+- Browse contacts across your address books, each shown with its photo or an initials avatar.
+- Create, edit and delete contacts: photo, name, organization, birthday, labelled phone numbers
+  and emails (mobile / home / work…), postal addresses and groups.
+- Tap a phone number to call, an email to compose, or an address to open it in maps.
+- Search by name, phone, email, organization or group.
 
 ### 📁 Files (WebDAV)
 - Browse your storage with folder navigation.

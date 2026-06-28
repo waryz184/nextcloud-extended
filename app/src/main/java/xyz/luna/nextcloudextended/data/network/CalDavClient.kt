@@ -5,6 +5,9 @@ import xyz.luna.nextcloudextended.data.model.CalendarInfo
 import xyz.luna.nextcloudextended.data.model.NextcloudTask
 import xyz.luna.nextcloudextended.data.model.NextcloudNote
 import xyz.luna.nextcloudextended.data.model.NextcloudFile
+import xyz.luna.nextcloudextended.data.model.NextcloudContact
+import xyz.luna.nextcloudextended.data.model.LabeledValue
+import xyz.luna.nextcloudextended.data.model.PostalAddress
 import okhttp3.Credentials
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -614,6 +617,151 @@ class CalDavClient(
         })
     }
 
+    // ── CardDAV (Contacts) ───────────────────────────────────────────────────────
+
+    // Lists the user's address books (PROPFIND on the CardDAV home set).
+    fun getAddressBooks(onSuccess: (List<Pair<String, String>>) -> Unit, onFailure: (Exception) -> Unit) {
+        val url = "$baseUrl/remote.php/dav/addressbooks/users/$username/"
+        val propfindBody = """<?xml version="1.0" encoding="utf-8" ?>
+<d:propfind xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+  <d:prop>
+    <d:displayname />
+    <d:resourcetype />
+  </d:prop>
+</d:propfind>""".trimIndent()
+
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", credentials)
+            .addHeader("Depth", "1")
+            .addHeader("Content-Type", "application/xml; charset=utf-8")
+            .method("PROPFIND", propfindBody.toRequestBody("application/xml".toMediaType()))
+            .build()
+
+        client.newCall(request).enqueueTracked(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                if (!response.isSuccessful) { runOnMain { onFailure(Exception("HTTP Error: ${response.code}")) }; return }
+                val body = response.body?.string() ?: ""
+                try { runOnMain { onSuccess(parseAddressBooks(body)) } }
+                catch (e: Exception) { runOnMain { onFailure(e) } }
+            }
+        })
+    }
+
+    fun getContacts(addressBookHref: String, onSuccess: (List<NextcloudContact>) -> Unit, onFailure: (Exception) -> Unit) {
+        val reportBody = """<?xml version="1.0" encoding="utf-8" ?>
+<card:addressbook-query xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+  <d:prop>
+    <d:getetag />
+    <card:address-data />
+  </d:prop>
+</card:addressbook-query>""".trimIndent()
+
+        val request = Request.Builder()
+            .url("$baseUrl$addressBookHref")
+            .addHeader("Authorization", credentials)
+            .addHeader("Depth", "1")
+            .addHeader("Content-Type", "application/xml; charset=utf-8")
+            .method("REPORT", reportBody.toRequestBody("application/xml".toMediaType()))
+            .build()
+
+        client.newCall(request).enqueueTracked(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                if (!response.isSuccessful) { runOnMain { onFailure(Exception("HTTP Error: ${response.code}")) }; return }
+                val body = response.body?.string() ?: ""
+                try { runOnMain { onSuccess(parseContactsFromReport(body, addressBookHref)) } }
+                catch (e: Exception) { runOnMain { onFailure(e) } }
+            }
+        })
+    }
+
+    fun saveContact(contact: NextcloudContact, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
+        val fileUrl = if (contact.href.isNotEmpty()) "$baseUrl${contact.href}"
+                      else {
+                          val ab = if (contact.addressBookHref.endsWith("/")) contact.addressBookHref else "${contact.addressBookHref}/"
+                          "$baseUrl$ab${contact.uid}.vcf"
+                      }
+
+        val request = Request.Builder()
+            .url(fileUrl)
+            .addHeader("Authorization", credentials)
+            .addHeader("Content-Type", "text/vcard; charset=utf-8")
+            .put(buildVcard(contact).toRequestBody("text/vcard; charset=utf-8".toMediaType()))
+            .build()
+
+        client.newCall(request).enqueueTracked(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                if (response.isSuccessful || response.code == 201 || response.code == 204) runOnMain { onSuccess() }
+                else runOnMain { onFailure(Exception("HTTP Error: ${response.code}")) }
+            }
+        })
+    }
+
+    fun deleteContact(contact: NextcloudContact, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
+        val request = Request.Builder().url("$baseUrl${contact.href}").addHeader("Authorization", credentials).delete().build()
+        client.newCall(request).enqueueTracked(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                if (response.isSuccessful || response.code == 204) runOnMain { onSuccess() }
+                else runOnMain { onFailure(Exception("HTTP Error: ${response.code}")) }
+            }
+        })
+    }
+
+    // Rebuilds a vCard 3.0 from the managed fields while carrying over any property we don't model
+    // (NICKNAME, URL, IMPP, X-*…) from the original card so an edit doesn't drop it.
+    private fun buildVcard(contact: NextcloudContact): String {
+        val managed = setOf("BEGIN", "END", "VERSION", "UID", "FN", "N", "TEL", "EMAIL", "ORG", "REV",
+                            "ADR", "BDAY", "PHOTO", "CATEGORIES")
+        val preserved = contact.rawVcard
+            ?.lineSequence()
+            ?.filter { line ->
+                val prop = line.substringBefore(':').substringBefore(';').trim().uppercase()
+                prop.isNotEmpty() && prop !in managed
+            }
+            ?.map { it.trimEnd('\r') }
+            ?.toList().orEmpty()
+
+        val name = contact.fullName.trim()
+        val tokens = name.split(" ").filter { it.isNotBlank() }
+        val family = if (tokens.size > 1) tokens.last() else ""
+        val given = if (tokens.size > 1) tokens.dropLast(1).joinToString(" ") else name
+
+        fun typeParam(type: String) = if (type.isNotBlank()) ";TYPE=$type" else ""
+
+        return buildString {
+            appendLine("BEGIN:VCARD")
+            appendLine("VERSION:3.0")
+            appendLine("UID:${contact.uid}")
+            appendLine("FN:${escapeIcsText(name)}")
+            appendLine("N:${escapeIcsText(family)};${escapeIcsText(given)};;;")
+            contact.phones.filter { it.value.isNotBlank() }.forEach {
+                appendLine("TEL${typeParam(it.type)}:${escapeIcsText(it.value.trim())}")
+            }
+            contact.emails.filter { it.value.isNotBlank() }.forEach {
+                appendLine("EMAIL${typeParam(it.type)}:${escapeIcsText(it.value.trim())}")
+            }
+            contact.organization?.takeIf { it.isNotBlank() }?.let { appendLine("ORG:${escapeIcsText(it.trim())}") }
+            contact.addresses.filter { !it.isEmpty }.forEach { a ->
+                // ADR components: po-box ; ext ; street ; locality ; region ; postal-code ; country
+                appendLine("ADR${typeParam(a.type)}:;;${escapeIcsText(a.street.trim())};${escapeIcsText(a.city.trim())};;${escapeIcsText(a.postalCode.trim())};${escapeIcsText(a.country.trim())}")
+            }
+            contact.birthday?.takeIf { it.isNotBlank() }?.let { appendLine("BDAY:$it") }
+            contact.categories.filter { it.isNotBlank() }.takeIf { it.isNotEmpty() }?.let { cats ->
+                appendLine("CATEGORIES:${cats.joinToString(",") { escapeIcsText(it.trim()) }}")
+            }
+            contact.photoBase64?.takeIf { it.isNotBlank() }?.let { photo ->
+                val type = contact.photoMimeType?.substringAfter("/")?.uppercase()?.takeIf { it.isNotBlank() } ?: "JPEG"
+                appendLine("PHOTO;ENCODING=b;TYPE=$type:$photo")
+            }
+            preserved.forEach { appendLine(it) }
+            append("END:VCARD")
+        }
+    }
+
     // ── Parsers ────────────────────────────────────────────────────────────────
 
     private fun parseCalendarsWithColor(xml: String, filterComponent: String): List<CalendarInfo> {
@@ -661,6 +809,136 @@ class CalDavClient(
             tasks.addAll(parseIcsTasks(unescapeXml(m.groupValues[1]), calendarHref))
         }
         return tasks
+    }
+
+    private fun parseAddressBooks(xml: String): List<Pair<String, String>> {
+        val result = mutableListOf<Pair<String, String>>()
+        val responseRegex = Regex("<d:response[\\s\\S]*?</d:response>")
+        val hrefRegex = Regex("<d:href>(.*?)</d:href>")
+        val displaynameRegex = Regex("<d:displayname>(.*?)</d:displayname>")
+        val addressbookTypeRegex = Regex("<[a-zA-Z0-9:]*addressbook[\\s/>]")
+        for (resp in responseRegex.findAll(xml)) {
+            val respStr = resp.value
+            val href = hrefRegex.find(respStr)?.groupValues?.get(1) ?: ""
+            if (href.isEmpty() || !addressbookTypeRegex.containsMatchIn(respStr)) continue
+            val displayname = displaynameRegex.find(respStr)?.groupValues?.get(1)?.let { unescapeXml(it) } ?: "Contacts"
+            result.add(Pair(href, displayname))
+        }
+        return result
+    }
+
+    private fun parseContactsFromReport(xml: String, addressBookHref: String): List<NextcloudContact> {
+        val contacts = mutableListOf<NextcloudContact>()
+        val responseRegex = Regex("<d:response[\\s\\S]*?</d:response>")
+        val hrefRegex = Regex("<d:href>(.*?)</d:href>")
+        val dataRegex = Regex("<[a-zA-Z0-9:]*address-data[^>]*>([\\s\\S]*?)</[a-zA-Z0-9:]*address-data>")
+        for (resp in responseRegex.findAll(xml)) {
+            val respStr = resp.value
+            val vcardXml = dataRegex.find(respStr)?.groupValues?.get(1) ?: continue
+            val vcard = unescapeXml(vcardXml).trim()
+            if (vcard.isEmpty()) continue
+            val href = hrefRegex.find(respStr)?.groupValues?.get(1)?.let {
+                runCatching { java.net.URLDecoder.decode(it, "UTF-8") }.getOrDefault(it)
+            } ?: ""
+            parseVcard(vcard, addressBookHref, href)?.let { contacts.add(it) }
+        }
+        return contacts
+    }
+
+    private fun parseVcard(vcard: String, addressBookHref: String, href: String): NextcloudContact {
+        val unfolded = vcard.replace("\r\n ", "").replace("\r\n\t", "").replace("\n ", "").replace("\n\t", "")
+        fun rawFirst(prop: String) = Regex("(?m)^$prop(?:;[^:\\r\\n]*)?:(.*)$").find(unfolded)?.groupValues?.get(1)?.trimEnd('\r')
+
+        val uid = rawFirst("UID")?.trim()?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
+        val fn = rawFirst("FN")?.let { unescapeIcsText(it).trim() }
+        val nameFromN = rawFirst("N")?.let { n ->
+            val parts = splitVcardComponents(n, ';')
+            listOf(parts.getOrNull(1) ?: "", parts.getOrNull(0) ?: "").filter { it.isNotBlank() }.joinToString(" ")
+        }
+        val fullName = fn?.takeIf { it.isNotBlank() } ?: nameFromN?.takeIf { it.isNotBlank() } ?: "?"
+
+        val phones = vcardEntries(unfolded, "TEL")
+            .map { (params, value) -> LabeledValue(unescapeIcsText(value).trim(), extractType(params)) }
+            .filter { it.value.isNotBlank() }
+        val emails = vcardEntries(unfolded, "EMAIL")
+            .map { (params, value) -> LabeledValue(unescapeIcsText(value).trim(), extractType(params)) }
+            .filter { it.value.isNotBlank() }
+
+        val org = rawFirst("ORG")?.let { splitVcardComponents(it, ';').filter { c -> c.isNotBlank() }.joinToString(" · ") }
+            ?.takeIf { it.isNotBlank() }
+
+        val addresses = vcardEntries(unfolded, "ADR").mapNotNull { (params, value) ->
+            val c = splitVcardComponents(value, ';')
+            PostalAddress(
+                type = extractType(params),
+                street = c.getOrNull(2) ?: "",
+                city = c.getOrNull(3) ?: "",
+                postalCode = c.getOrNull(5) ?: "",
+                country = c.getOrNull(6) ?: ""
+            ).takeUnless { it.isEmpty }
+        }
+
+        val birthday = rawFirst("BDAY")?.let { normalizeBday(it.trim()) }
+        val categories = rawFirst("CATEGORIES")?.let { splitVcardComponents(it, ',') }?.filter { it.isNotBlank() }.orEmpty()
+        val (photo, photoMime) = parsePhoto(unfolded)
+
+        return NextcloudContact(uid, fullName, phones, emails, org, addresses, birthday, photo, photoMime, categories, addressBookHref, href, unfolded)
+    }
+
+    // Returns (paramsString, rawValue) for every line of the given vCard property.
+    private fun vcardEntries(unfolded: String, prop: String): List<Pair<String, String>> =
+        Regex("(?m)^$prop((?:;[^:\\r\\n]*)?):(.*)$").findAll(unfolded)
+            .map { Pair(it.groupValues[1], it.groupValues[2].trimEnd('\r')) }
+            .toList()
+
+    // Pulls the meaningful TYPE token out of a vCard parameter string, skipping generic markers.
+    private fun extractType(params: String): String =
+        Regex("TYPE=([^;:]*)", RegexOption.IGNORE_CASE).findAll(params)
+            .flatMap { it.groupValues[1].split(",").asSequence() }
+            .map { it.trim().uppercase() }
+            .firstOrNull { it.isNotBlank() && it !in setOf("VOICE", "INTERNET", "PREF") } ?: ""
+
+    // Normalises a vCard BDAY ("19900615", "1990-06-15", "1990-06-15T…") to "YYYY-MM-DD".
+    private fun normalizeBday(raw: String): String? {
+        val v = raw.substringBefore("T")
+        return when {
+            Regex("^\\d{8}$").matches(v) -> "${v.substring(0, 4)}-${v.substring(4, 6)}-${v.substring(6, 8)}"
+            Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(v) -> v
+            else -> v.takeIf { it.isNotBlank() }
+        }
+    }
+
+    // Extracts (base64, mimeType) from the PHOTO property — handles vCard 3.0 inline and 4.0 data URI.
+    private fun parsePhoto(unfolded: String): Pair<String?, String?> {
+        val (params, value) = vcardEntries(unfolded, "PHOTO").firstOrNull() ?: return null to null
+        val v = value.trim()
+        if (v.startsWith("data:", ignoreCase = true)) {
+            val mime = Regex("data:([^;]+)", RegexOption.IGNORE_CASE).find(v)?.groupValues?.get(1)
+            val b64 = v.substringAfter("base64,", "").ifBlank { return null to null }
+            return b64 to mime
+        }
+        val isBase64 = params.contains("ENCODING=b", true) || params.contains("BASE64", true)
+        if (!isBase64 || v.isBlank()) return null to null
+        val typeTok = Regex("TYPE=([^;:]*)", RegexOption.IGNORE_CASE).find(params)?.groupValues?.get(1)?.trim()
+        val mime = typeTok?.takeIf { it.isNotBlank() }?.let { "image/${it.lowercase()}" }
+        return v to mime
+    }
+
+    // Splits a vCard value on UNescaped separators (';' for structured, ',' for lists), unescaping each part.
+    private fun splitVcardComponents(value: String, sep: Char): List<String> {
+        val parts = mutableListOf<String>()
+        val sb = StringBuilder()
+        var i = 0
+        while (i < value.length) {
+            val c = value[i]
+            when {
+                c == '\\' && i + 1 < value.length -> { sb.append(c); sb.append(value[i + 1]); i += 2 }
+                c == sep -> { parts.add(sb.toString()); sb.clear(); i++ }
+                else -> { sb.append(c); i++ }
+            }
+        }
+        parts.add(sb.toString())
+        return parts.map { unescapeIcsText(it).trim() }
     }
 
     private fun parseIcsTasks(icsContent: String, calendarHref: String): List<NextcloudTask> {

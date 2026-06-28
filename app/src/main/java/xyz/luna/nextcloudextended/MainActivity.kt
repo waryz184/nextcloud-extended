@@ -35,6 +35,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.launch
 import xyz.luna.nextcloudextended.data.model.CalendarEvent
+import xyz.luna.nextcloudextended.data.model.NextcloudContact
 import xyz.luna.nextcloudextended.data.model.NextcloudFile
 import xyz.luna.nextcloudextended.data.model.NextcloudNote
 import xyz.luna.nextcloudextended.data.model.NextcloudTask
@@ -44,7 +45,7 @@ import java.io.File
 import java.util.Locale
 import java.util.UUID
 
-enum class HubTab { CALENDAR, TASKS, NOTES, FILES }
+enum class HubTab { CALENDAR, TASKS, NOTES, CONTACTS, FILES }
 enum class CalendarViewMode { DAY, WEEK, MONTH, YEAR }
 enum class OfficeViewerType { POI, ONLINE }
 
@@ -107,6 +108,9 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     var editingEvent by remember { mutableStateOf<CalendarEvent?>(null) }
     var detailEvent by remember { mutableStateOf<CalendarEvent?>(null) }
     var editingTask by remember { mutableStateOf<NextcloudTask?>(null) }
+    var showAddContactDialog by remember { mutableStateOf(false) }
+    var editingContact by remember { mutableStateOf<NextcloudContact?>(null) }
+    var viewingContact by remember { mutableStateOf<NextcloudContact?>(null) }
     var pdfToView by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
     var officeToView by remember { mutableStateOf<OfficeViewData?>(null) }
     var showSettings by remember { mutableStateOf(false) }
@@ -140,7 +144,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(if (!vm.isConnected) "Nextcloud Extended" else when (vm.currentTab) { HubTab.CALENDAR -> s.tabCalendar; HubTab.TASKS -> s.tabTasks; HubTab.NOTES -> s.tabNotes; HubTab.FILES -> s.tabFiles }) },
+                title = { Text(if (!vm.isConnected) "Nextcloud Extended" else when (vm.currentTab) { HubTab.CALENDAR -> s.tabCalendar; HubTab.TASKS -> s.tabTasks; HubTab.NOTES -> s.tabNotes; HubTab.CONTACTS -> s.tabContacts; HubTab.FILES -> s.tabFiles }) },
                 actions = {
                     if (vm.isConnected) {
                         IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, s.settings) }
@@ -161,6 +165,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                     NavigationBarItem(selected = vm.currentTab == HubTab.CALENDAR, onClick = { vm.currentTab = HubTab.CALENDAR; vm.refreshData() }, label = { Text(s.tabCalendar) }, icon = { Icon(Icons.Default.DateRange, s.tabCalendar) })
                     NavigationBarItem(selected = vm.currentTab == HubTab.TASKS, onClick = { vm.currentTab = HubTab.TASKS; vm.refreshData() }, label = { Text(s.tabTasks) }, icon = { BadgedBox(badge = { if (uncompletedTasks > 0) Badge { Text("$uncompletedTasks") } }) { Icon(Icons.Default.List, s.tabTasks) } })
                     NavigationBarItem(selected = vm.currentTab == HubTab.NOTES, onClick = { vm.currentTab = HubTab.NOTES; vm.refreshData() }, label = { Text(s.tabNotes) }, icon = { Icon(Icons.Default.Edit, s.tabNotes) })
+                    NavigationBarItem(selected = vm.currentTab == HubTab.CONTACTS, onClick = { vm.currentTab = HubTab.CONTACTS; vm.refreshData() }, label = { Text(s.tabContacts) }, icon = { Icon(Icons.Default.Person, s.tabContacts) })
                     NavigationBarItem(selected = vm.currentTab == HubTab.FILES, onClick = { vm.currentTab = HubTab.FILES; vm.refreshData() }, label = { Text(s.tabFiles) }, icon = { Icon(Icons.Default.Folder, s.tabFiles) })
                 }
             }
@@ -170,6 +175,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                 HubTab.TASKS -> FloatingActionButton(onClick = { showAddTaskDialog = true }) { Icon(Icons.Default.Add, s.addTask) }
                 HubTab.NOTES -> FloatingActionButton(onClick = { showAddNoteDialog = true }) { Icon(Icons.Default.Add, s.createNote) }
                 HubTab.FILES -> FloatingActionButton(onClick = { showDriveBottomSheet = true }) { Icon(Icons.Default.Add, s.add) }
+                HubTab.CONTACTS -> FloatingActionButton(onClick = { showAddContactDialog = true }) { Icon(Icons.Default.Add, s.createContact) }
                 HubTab.CALENDAR -> FloatingActionButton(onClick = { showAddEventDialog = true }) { Icon(Icons.Default.Add, s.addEvent) }
             }
         }
@@ -192,6 +198,13 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                         HubTab.CALENDAR -> CalendarMultiViewScreen(calendarInfos = vm.calendarInfos, activeCalendarHrefs = vm.activeCalendarHrefs, events = vm.events, calendarViewMode = vm.calendarViewMode, selectedDate = vm.selectedDate, onToggleCalendar = { vm.toggleCalendar(it) }, onViewModeChange = { vm.calendarViewMode = it }, onDateChange = { vm.selectedDate = it }, onEventTap = { detailEvent = it })
                         HubTab.TASKS -> TasksScreen(taskLists = vm.taskLists, selectedName = vm.selectedTaskListName, tasks = vm.tasks, onTaskListSelected = { href, name -> vm.loadTaskList(href, name) }, onToggleStatus = { vm.toggleTaskStatus(it) }, onDeleteTask = { vm.deleteTask(it) }, onEditTask = { editingTask = it }, onCreateList = { showCreateTaskListDialog = true }, onRenameList = { showRenameTaskListDialog = true }, onDeleteList = { showDeleteTaskListDialog = true })
                         HubTab.NOTES -> NotesScreen(notes = vm.notes, onNoteSelected = { viewingNote = it }, onToggleFavorite = { vm.toggleNoteFavorite(it) })
+                        HubTab.CONTACTS -> ContactsScreen(
+                            addressBooks = vm.addressBooks,
+                            selectedName = vm.selectedAddressBookName,
+                            contacts = vm.contacts,
+                            onAddressBookSelected = { href, name -> vm.loadContactList(href, name) },
+                            onContactSelected = { viewingContact = it }
+                        )
                         HubTab.FILES -> FilesScreen(
                             currentFolderPath = vm.currentFolderPath, files = vm.files,
                             onFileClick = { file ->
@@ -295,6 +308,29 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     // Edit task
     editingTask?.let { task ->
         EditTaskDialog(task = task, onDismiss = { editingTask = null }, onSave = { summary, desc, due -> vm.editTask(task, summary, desc.ifEmpty { null }, due.ifEmpty { null }) })
+    }
+
+    // Contact detail
+    viewingContact?.let { contact ->
+        ContactDetailSheet(
+            contact = contact,
+            onDismiss = { viewingContact = null },
+            onEdit = { editingContact = contact },
+            onDelete = { vm.deleteContact(contact) },
+            onDial = { phone -> runCatching { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${phone.replace(" ", "")}"))) } },
+            onSendMail = { email -> runCatching { context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email"))) } },
+            onOpenMap = { address -> runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(address)))) } }
+        )
+    }
+
+    // Add contact
+    if (showAddContactDialog) {
+        ContactDialog(initial = null, onDismiss = { showAddContactDialog = false }, onSave = { vm.createContact(it) })
+    }
+
+    // Edit contact
+    editingContact?.let { contact ->
+        ContactDialog(initial = contact, onDismiss = { editingContact = null }, onSave = { vm.updateContact(it) })
     }
 
     // Drive bottom sheet

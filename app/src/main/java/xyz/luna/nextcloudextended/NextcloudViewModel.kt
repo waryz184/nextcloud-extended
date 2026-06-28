@@ -10,6 +10,7 @@ import xyz.luna.nextcloudextended.data.model.CalendarInfo
 import xyz.luna.nextcloudextended.data.model.NextcloudFile
 import xyz.luna.nextcloudextended.data.model.NextcloudNote
 import xyz.luna.nextcloudextended.data.model.NextcloudTask
+import xyz.luna.nextcloudextended.data.model.NextcloudContact
 import xyz.luna.nextcloudextended.data.network.CalDavClient
 import java.time.LocalDate
 
@@ -40,6 +41,12 @@ class NextcloudViewModel : ViewModel() {
     var notes by mutableStateOf<List<NextcloudNote>>(emptyList())
     var currentFolderPath by mutableStateOf("")
     var files by mutableStateOf<List<NextcloudFile>>(emptyList())
+
+    // Contacts — CardDAV
+    var addressBooks by mutableStateOf<List<Pair<String, String>>>(emptyList())
+    var selectedAddressBookHref by mutableStateOf("")
+    var selectedAddressBookName by mutableStateOf("")
+    var contacts by mutableStateOf<List<NextcloudContact>>(emptyList())
 
     var officeViewerPref by mutableStateOf(OfficeViewerType.POI)
 
@@ -122,6 +129,20 @@ class NextcloudViewModel : ViewModel() {
                     )
                 } else { if (loadingCount > 0) loadingCount-- }
             }
+            HubTab.CONTACTS -> {
+                if (selectedAddressBookHref.isEmpty()) {
+                    if (loadingCount > 0) loadingCount--
+                    loadAddressBooks()
+                } else {
+                    c.getContacts(selectedAddressBookHref,
+                        onSuccess = { list ->
+                            contacts = list.sortedBy { it.fullName.lowercase() }
+                            if (loadingCount > 0) loadingCount--
+                        },
+                        onFailure = { err -> errorMessage = s.contactsError(msg(err)); if (loadingCount > 0) loadingCount-- }
+                    )
+                }
+            }
         }
     }
 
@@ -161,6 +182,7 @@ class NextcloudViewModel : ViewModel() {
         taskLists = emptyList(); events = emptyList(); tasks = emptyList()
         notes = emptyList(); files = emptyList()
         currentFolderPath = ""; selectedTaskListHref = ""; selectedTaskListName = ""
+        addressBooks = emptyList(); contacts = emptyList(); selectedAddressBookHref = ""; selectedAddressBookName = ""
     }
 
     fun loadTaskList(href: String, name: String) {
@@ -353,6 +375,62 @@ class NextcloudViewModel : ViewModel() {
         client?.downloadFile(fileHref,
             onSuccess = { bytes -> if (loadingCount > 0) loadingCount--; onSuccess(bytes) },
             onFailure = { err -> errorMessage = s.downloadFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+        )
+    }
+
+    // ── Contacts (CardDAV) ──────────────────────────────────────────────────────
+
+    fun loadAddressBooks() {
+        val c = client ?: return
+        loadingCount++
+        c.getAddressBooks(
+            onSuccess = { books ->
+                addressBooks = books
+                if (books.isNotEmpty() && selectedAddressBookHref.isEmpty()) {
+                    val default = books.find { it.second.lowercase().contains("contact") || it.first.lowercase().contains("contact") } ?: books[0]
+                    if (loadingCount > 0) loadingCount--
+                    loadContactList(default.first, default.second)
+                } else {
+                    if (loadingCount > 0) loadingCount--
+                }
+            },
+            onFailure = { err -> errorMessage = s.contactsError(msg(err)); if (loadingCount > 0) loadingCount-- }
+        )
+    }
+
+    fun loadContactList(href: String, name: String) {
+        selectedAddressBookHref = href; selectedAddressBookName = name
+        loadingCount++
+        client?.getContacts(href,
+            onSuccess = { list -> contacts = list.sortedBy { it.fullName.lowercase() }; if (loadingCount > 0) loadingCount-- },
+            onFailure = { err -> errorMessage = s.contactsError(msg(err)); if (loadingCount > 0) loadingCount-- }
+        )
+    }
+
+    fun createContact(draft: NextcloudContact) {
+        val ab = selectedAddressBookHref
+        if (ab.isEmpty()) { errorMessage = s.contactsError(""); return }
+        loadingCount++
+        val contact = draft.copy(uid = java.util.UUID.randomUUID().toString(), addressBookHref = ab, href = "", rawVcard = null)
+        client?.saveContact(contact,
+            onSuccess = { refreshAndStop() },
+            onFailure = { err -> errorMessage = s.contactCreateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+        )
+    }
+
+    fun updateContact(contact: NextcloudContact) {
+        loadingCount++
+        client?.saveContact(contact,
+            onSuccess = { refreshAndStop() },
+            onFailure = { err -> errorMessage = s.contactEditFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+        )
+    }
+
+    fun deleteContact(contact: NextcloudContact) {
+        loadingCount++
+        client?.deleteContact(contact,
+            onSuccess = { refreshAndStop() },
+            onFailure = { err -> errorMessage = s.contactDeleteFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
         )
     }
 }
