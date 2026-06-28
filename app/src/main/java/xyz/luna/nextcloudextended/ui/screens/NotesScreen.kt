@@ -99,7 +99,6 @@ fun NoteItem(note: NextcloudNote, onClick: () -> Unit, onToggleFav: () -> Unit) 
 // Lightweight Markdown renderer using AnnotatedString — covers 90% of Nextcloud Notes content
 @Composable
 fun MarkdownText(markdown: String, modifier: Modifier = Modifier) {
-    val baseSize = 14.sp
     val annotated = remember(markdown) {
         buildAnnotatedString {
             markdown.lines().forEach { rawLine ->
@@ -131,11 +130,6 @@ fun MarkdownText(markdown: String, modifier: Modifier = Modifier) {
 }
 
 private fun androidx.compose.ui.text.AnnotatedString.Builder.appendInlineMarkdown(text: String) {
-    val boldItalicRegex = Regex("""\*\*\*(.*?)\*\*\*""")
-    val boldRegex = Regex("""\*\*(.*?)\*\*""")
-    val italicRegex = Regex("""\*(.*?)\*""")
-    val codeRegex = Regex("""`(.*?)`""")
-
     val allPatterns = Regex("""\*\*\*(.*?)\*\*\*|\*\*(.*?)\*\*|\*(.*?)\*|`(.*?)`""")
     var last = 0
     for (match in allPatterns.findAll(text)) {
