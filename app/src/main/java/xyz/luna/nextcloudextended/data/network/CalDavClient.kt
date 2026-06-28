@@ -201,21 +201,16 @@ class CalDavClient(
         val fileUrl = if (task.calendarHref.endsWith("/")) "$baseUrl${task.calendarHref}${task.uid}.ics"
                       else "$baseUrl${task.calendarHref}/${task.uid}.ics"
 
-        val cleanSummary = task.summary.replace("\n", " ").replace("\r", "")
-        val cleanDescription = task.description?.replace("\n", "\\n")?.replace("\r", "")
-
         val icsBody = buildString {
             appendLine("BEGIN:VCALENDAR")
             appendLine("VERSION:2.0")
             appendLine("PRODID:-//Nextcloud Extended//Tasks//EN")
             appendLine("BEGIN:VTODO")
             appendLine("UID:${task.uid}")
-            appendLine("SUMMARY:$cleanSummary")
-            if (cleanDescription != null) appendLine("DESCRIPTION:$cleanDescription")
+            appendLine("SUMMARY:${escapeIcsText(task.summary)}")
+            task.description?.let { appendLine("DESCRIPTION:${escapeIcsText(it)}") }
             appendLine("STATUS:${task.status}")
-            if (task.due != null) {
-                appendLine("DUE:${task.due.replace("-", "").replace(" ", "T").replace(":", "")}Z")
-            }
+            icsDateLine("DUE", formatToIcsDate(task.due))?.let { appendLine(it) }
             appendLine("END:VTODO")
             append("END:VCALENDAR")
         }
@@ -240,9 +235,6 @@ class CalDavClient(
         val fileUrl = if (calendarHref.endsWith("/")) "$baseUrl$calendarHref${event.id}.ics"
                       else "$baseUrl$calendarHref/${event.id}.ics"
 
-        val cleanSummary = event.summary.replace("\n", " ").replace("\r", "")
-        val cleanDescription = event.description?.replace("\n", "\\n")?.replace("\r", "")
-        val cleanLocation = event.location?.replace("\n", " ")?.replace("\r", "")
         val startIcs = formatToIcsDate(event.startTime)
         val endIcs = formatToIcsDate(event.endTime)
 
@@ -252,11 +244,11 @@ class CalDavClient(
             appendLine("PRODID:-//Nextcloud Extended//Calendar//EN")
             appendLine("BEGIN:VEVENT")
             appendLine("UID:${event.id}")
-            appendLine("SUMMARY:$cleanSummary")
-            if (cleanDescription != null) appendLine("DESCRIPTION:$cleanDescription")
-            if (cleanLocation != null) appendLine("LOCATION:$cleanLocation")
-            if (startIcs != null) appendLine("DTSTART:$startIcs")
-            if (endIcs != null) appendLine("DTEND:$endIcs")
+            appendLine("SUMMARY:${escapeIcsText(event.summary)}")
+            event.description?.let { appendLine("DESCRIPTION:${escapeIcsText(it)}") }
+            event.location?.let { appendLine("LOCATION:${escapeIcsText(it)}") }
+            icsDateLine("DTSTART", startIcs)?.let { appendLine(it) }
+            icsDateLine("DTEND", endIcs)?.let { appendLine(it) }
             appendLine("END:VEVENT")
             append("END:VCALENDAR")
         }
@@ -294,7 +286,7 @@ class CalDavClient(
     fun createShareLink(fileHref: String, onSuccess: (String) -> Unit, onFailure: (Exception) -> Unit) {
         val sharePath = fileHref.replaceFirst(Regex("/remote\\.php/dav/files/[^/]+"), "")
         val url = "$baseUrl/ocs/v2.php/apps/files_sharing/api/v1/shares"
-        val formBody = "path=$sharePath&shareType=3"
+        val formBody = "path=${java.net.URLEncoder.encode(sharePath, "UTF-8")}&shareType=3"
 
         val request = Request.Builder()
             .url(url)
@@ -308,7 +300,7 @@ class CalDavClient(
             override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
             override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
                 val body = response.body?.string() ?: ""
-                if (!response.isSuccessful && response.code != 200) {
+                if (!response.isSuccessful) {
                     runOnMain { onFailure(Exception("HTTP Error: ${response.code}")) }
                     return
                 }
@@ -551,7 +543,7 @@ class CalDavClient(
         val body = """<?xml version="1.0" encoding="utf-8" ?>
 <c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
   <d:set><d:prop>
-    <d:displayname>$listName</d:displayname>
+    <d:displayname>${escapeXml(listName)}</d:displayname>
     <c:supported-calendar-component-set><c:comp name="VTODO" /></c:supported-calendar-component-set>
   </d:prop></d:set>
 </c:mkcalendar>""".trimIndent()
@@ -583,7 +575,7 @@ class CalDavClient(
     fun renameTaskList(calendarHref: String, newName: String, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
         val body = """<?xml version="1.0" encoding="utf-8" ?>
 <d:propertyupdate xmlns:d="DAV:"><d:set><d:prop>
-  <d:displayname>$newName</d:displayname>
+  <d:displayname>${escapeXml(newName)}</d:displayname>
 </d:prop></d:set></d:propertyupdate>""".trimIndent()
 
         val request = Request.Builder().url("$baseUrl$calendarHref").addHeader("Authorization", credentials)
@@ -684,8 +676,8 @@ class CalDavClient(
         for (match in vtodoRegex.findAll(unfolded)) {
             val s = match.value
             val uid = uidRegex.find(s)?.groupValues?.get(1)?.trim() ?: UUID.randomUUID().toString()
-            val summary = summaryRegex.find(s)?.groupValues?.get(1)?.trim() ?: "Untitled task"
-            val description = descRegex.find(s)?.groupValues?.get(1)?.trim()?.replace("\\n", "\n")
+            val summary = summaryRegex.find(s)?.groupValues?.get(1)?.let { unescapeIcsText(it).trim() } ?: "Untitled task"
+            val description = descRegex.find(s)?.groupValues?.get(1)?.let { unescapeIcsText(it).trim() }
             val status = statusRegex.find(s)?.groupValues?.get(1)?.trim() ?: "NEEDS-ACTION"
             val due = dueRegex.find(s)?.groupValues?.get(1)?.trim()
             tasks.add(NextcloudTask(uid, summary, description, status, formatIcsDate(due), calendarHref))
@@ -707,11 +699,11 @@ class CalDavClient(
         for (match in veventRegex.findAll(unfolded)) {
             val s = match.value
             val uid = uidRegex.find(s)?.groupValues?.get(1)?.trim() ?: UUID.randomUUID().toString()
-            val summary = summaryRegex.find(s)?.groupValues?.get(1)?.trim() ?: "No Title"
-            val description = descRegex.find(s)?.groupValues?.get(1)?.trim()?.replace("\\n", "\n")
+            val summary = summaryRegex.find(s)?.groupValues?.get(1)?.let { unescapeIcsText(it).trim() } ?: "No Title"
+            val description = descRegex.find(s)?.groupValues?.get(1)?.let { unescapeIcsText(it).trim() }
             val startStr = dtstartRegex.find(s)?.groupValues?.get(1)?.trim()
             val endStr = dtendRegex.find(s)?.groupValues?.get(1)?.trim()
-            val location = locationRegex.find(s)?.groupValues?.get(1)?.trim()
+            val location = locationRegex.find(s)?.groupValues?.get(1)?.let { unescapeIcsText(it).trim() }
             events.add(CalendarEvent(uid, summary, description, formatIcsDate(startStr), formatIcsDate(endStr), location, calendarHref))
         }
         return events
@@ -741,6 +733,55 @@ class CalDavClient(
             return "${clean.substring(0,4)}${clean.substring(5,7)}${clean.substring(8,10)}"
         }
         return clean.replace("-", "").replace(":", "").replace(" ", "T")
+    }
+
+    // ── Escaping helpers ─────────────────────────────────────────────────────────
+
+    // Escapes a value for inclusion in a WebDAV/CalDAV XML body (e.g. <d:displayname>).
+    // Without this, a list named "R&D" or "A < B" produces malformed XML and the request fails.
+    private fun escapeXml(s: String): String =
+        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace("\"", "&quot;").replace("'", "&apos;")
+
+    // Escapes an iCalendar TEXT value per RFC 5545 §3.3.11: backslash, semicolon, comma and
+    // newlines must be escaped, otherwise a summary like "Budget, plan; review" is mis-parsed.
+    private fun escapeIcsText(s: String): String =
+        s.replace("\\", "\\\\")
+            .replace(";", "\\;")
+            .replace(",", "\\,")
+            .replace("\r\n", "\n")
+            .replace("\r", "\n")
+            .replace("\n", "\\n")
+
+    // Inverse of escapeIcsText. Single pass so "C:\\new" (escaped backslash) is not read as a
+    // newline. Also fixes display of events written by other clients that escape ,/;/\ correctly.
+    private fun unescapeIcsText(s: String): String {
+        val sb = StringBuilder(s.length)
+        var i = 0
+        while (i < s.length) {
+            val c = s[i]
+            if (c == '\\' && i + 1 < s.length) {
+                when (val n = s[i + 1]) {
+                    'n', 'N' -> sb.append('\n')
+                    '\\' -> sb.append('\\')
+                    ',' -> sb.append(',')
+                    ';' -> sb.append(';')
+                    else -> sb.append(n)
+                }
+                i += 2
+            } else {
+                sb.append(c)
+                i++
+            }
+        }
+        return sb.toString()
+    }
+
+    // Builds a date property line, marking 8-digit (date-only) values with VALUE=DATE so the
+    // server doesn't reject e.g. "DUE:20250628Z" (a date with a UTC suffix is invalid iCal).
+    private fun icsDateLine(name: String, value: String?): String? {
+        if (value == null) return null
+        return if (value.length == 8) "$name;VALUE=DATE:$value" else "$name:$value"
     }
 
     private fun parseFiles(xml: String, requestPath: String): List<NextcloudFile> {
