@@ -167,6 +167,9 @@ private fun OnlineViewerContent(
                                 settings.domStorageEnabled = true
                                 settings.loadWithOverviewMode = true
                                 settings.useWideViewPort = true
+                                // Editor URL is remote; deny local file/content access to reduce attack surface.
+                                settings.allowFileAccess = false
+                                settings.allowContentAccess = false
                                 webViewClient = WebViewClient()
                                 loadUrl(url)
                             }
