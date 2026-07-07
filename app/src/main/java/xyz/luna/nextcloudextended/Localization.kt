@@ -67,6 +67,7 @@ class Strings(
     val selectCalendarFirst: String,
     val deleteEventTitle: String,
     val deleteEventConfirm: (String) -> String,
+    val recurringEventNotice: String,
     // Drive
     val addToDrive: String,
     val createFolder: String,
@@ -259,6 +260,7 @@ val EnStrings = Strings(
     selectCalendarFirst = "Select a calendar first",
     deleteEventTitle = "Delete event?",
     deleteEventConfirm = { "\"$it\" will be permanently deleted." },
+    recurringEventNotice = "Recurring event — edit or delete it from the web interface.",
     addToDrive = "Add to Drive",
     createFolder = "Create a folder",
     uploadFile = "Upload a file",
@@ -442,6 +444,7 @@ val FrStrings = Strings(
     selectCalendarFirst = "Sélectionnez un calendrier d'abord",
     deleteEventTitle = "Supprimer l'événement ?",
     deleteEventConfirm = { "« $it » sera supprimé définitivement." },
+    recurringEventNotice = "Événement récurrent — modifiez-le ou supprimez-le depuis l'interface web.",
     addToDrive = "Ajouter au Drive",
     createFolder = "Créer un dossier",
     uploadFile = "Importer un fichier",

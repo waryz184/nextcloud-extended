@@ -7,5 +7,6 @@ data class CalendarEvent(
     val startTime: String?,
     val endTime: String?,
     val location: String?,
-    val calendarHref: String = ""
+    val calendarHref: String = "",
+    val isRecurringInstance: Boolean = false
 )

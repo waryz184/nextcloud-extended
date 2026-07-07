@@ -14,6 +14,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import android.os.Handler
@@ -117,14 +119,26 @@ class CalDavClient(
     fun getEvents(calendarHref: String, onSuccess: (List<CalendarEvent>) -> Unit, onFailure: (Exception) -> Unit) {
         val url = "$baseUrl$calendarHref"
 
+        // Ask the server to expand recurring events (RRULE) into concrete occurrences within
+        // this window — recurrence math (BYDAY, EXDATE, leap years, ...) is delegated to the
+        // CalDAV server instead of being reimplemented client-side.
+        val utcFormat = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
+        val now = LocalDate.now()
+        val rangeStart = now.minusYears(2).atStartOfDay().format(utcFormat)
+        val rangeEnd = now.plusYears(3).atStartOfDay().format(utcFormat)
+
         val reportBody = """<?xml version="1.0" encoding="utf-8" ?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
   <d:prop>
-    <c:calendar-data />
+    <c:calendar-data>
+      <c:expand start="$rangeStart" end="$rangeEnd" />
+    </c:calendar-data>
   </d:prop>
   <c:filter>
     <c:comp-filter name="VCALENDAR">
-      <c:comp-filter name="VEVENT" />
+      <c:comp-filter name="VEVENT">
+        <c:time-range start="$rangeStart" end="$rangeEnd" />
+      </c:comp-filter>
     </c:comp-filter>
   </c:filter>
 </c:calendar-query>""".trimIndent()
@@ -973,6 +987,8 @@ class CalDavClient(
         val dtendRegex = Regex("DTEND(?:;[^:]*)?:(.*)")
         val locationRegex = Regex("LOCATION:(.*)")
         val uidRegex = Regex("UID:(.*)")
+        val recurrenceIdRegex = Regex("RECURRENCE-ID(?:;[^:]*)?:")
+        val rruleRegex = Regex("RRULE:")
 
         for (match in veventRegex.findAll(unfolded)) {
             val s = match.value
@@ -982,7 +998,10 @@ class CalDavClient(
             val startStr = dtstartRegex.find(s)?.groupValues?.get(1)?.trim()
             val endStr = dtendRegex.find(s)?.groupValues?.get(1)?.trim()
             val location = locationRegex.find(s)?.groupValues?.get(1)?.let { unescapeIcsText(it).trim() }
-            events.add(CalendarEvent(uid, summary, description, formatIcsDate(startStr), formatIcsDate(endStr), location, calendarHref))
+            // A recurring event expanded server-side into several occurrences carries either
+            // RECURRENCE-ID (a computed instance) or RRULE (the master, for servers that don't expand).
+            val isRecurringInstance = recurrenceIdRegex.containsMatchIn(s) || rruleRegex.containsMatchIn(s)
+            events.add(CalendarEvent(uid, summary, description, formatIcsDate(startStr), formatIcsDate(endStr), location, calendarHref, isRecurringInstance))
         }
         return events
     }
