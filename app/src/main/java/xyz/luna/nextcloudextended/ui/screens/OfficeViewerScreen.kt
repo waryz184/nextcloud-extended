@@ -1,6 +1,7 @@
 package xyz.luna.nextcloudextended.ui.screens
 
 import android.util.Log
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
@@ -162,6 +163,9 @@ private fun OnlineViewerContent(
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
                         factory = { ctx ->
+                            // Confine top-level navigation to the editor's own origin over https, so a
+                            // redirect can't drive this JS-enabled WebView to an arbitrary site.
+                            val editorHost = runCatching { java.net.URI(url).host }.getOrNull()
                             WebView(ctx).apply {
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
@@ -170,7 +174,17 @@ private fun OnlineViewerContent(
                                 // Editor URL is remote; deny local file/content access to reduce attack surface.
                                 settings.allowFileAccess = false
                                 settings.allowContentAccess = false
-                                webViewClient = WebViewClient()
+                                webViewClient = object : WebViewClient() {
+                                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                                        val u = request.url
+                                        // If we couldn't determine the host, don't interfere.
+                                        if (editorHost == null) return false
+                                        val sameOrigin = u.host.equals(editorHost, ignoreCase = true) &&
+                                            (u.scheme == "https" || u.scheme == "about" || u.scheme == "data")
+                                        // Returning true = we handle it (i.e. block the navigation).
+                                        return !sameOrigin
+                                    }
+                                }
                                 loadUrl(url)
                             }
                         }

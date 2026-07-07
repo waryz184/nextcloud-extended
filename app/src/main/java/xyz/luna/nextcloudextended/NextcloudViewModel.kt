@@ -56,6 +56,16 @@ class NextcloudViewModel : ViewModel() {
 
     private fun msg(e: Exception?): String = e?.message ?: ""
 
+    // Single guarded decrement so a stray double-callback can never drive the spinner negative.
+    private fun endLoad() { if (loadingCount > 0) loadingCount-- }
+
+    // Cancel any in-flight HTTP calls when the ViewModel is destroyed (process death, etc.)
+    // so their callbacks don't fire against a dead scope.
+    override fun onCleared() {
+        client?.cancelAll()
+        super.onCleared()
+    }
+
     fun toggleCalendar(href: String) {
         activeCalendarHrefs = if (href in activeCalendarHrefs) activeCalendarHrefs - href
                               else activeCalendarHrefs + href
@@ -76,14 +86,14 @@ class NextcloudViewModel : ViewModel() {
                     done++
                     if (done == hrefs.size) {
                         events = collected.sortedBy { it.startTime ?: "" }
-                        if (loadingCount > 0) loadingCount--
+                        endLoad()
                     }
                 },
                 onFailure = { err ->
                     done++
                     if (done == hrefs.size) {
                         events = collected.sortedBy { it.startTime ?: "" }
-                        if (loadingCount > 0) loadingCount--
+                        endLoad()
                     }
                     errorMessage = s.calendarError(msg(err))
                 }
@@ -102,12 +112,12 @@ class NextcloudViewModel : ViewModel() {
                         val newHrefs = eventCals.map { it.href }.toSet()
                         calendarInfos = eventCals
                         activeCalendarHrefs = (activeCalendarHrefs intersect newHrefs) + (newHrefs - oldHrefs)
-                        if (loadingCount > 0) loadingCount--
+                        endLoad()
                         loadAllActiveCalendarsEvents()
                     },
                     onFailure = { err ->
                         errorMessage = s.calendarError(msg(err))
-                        if (loadingCount > 0) loadingCount--
+                        endLoad()
                         loadAllActiveCalendarsEvents()
                     }
                 )
@@ -117,19 +127,19 @@ class NextcloudViewModel : ViewModel() {
                     c.getTasks(selectedTaskListHref,
                         onSuccess = { list ->
                             tasks = list.sortedWith(compareBy({ it.status == "COMPLETED" }, { it.due ?: "" }))
-                            if (loadingCount > 0) loadingCount--
+                            endLoad()
                         },
-                        onFailure = { err -> errorMessage = s.tasksError(msg(err)); if (loadingCount > 0) loadingCount-- }
+                        onFailure = { err -> errorMessage = s.tasksError(msg(err)); endLoad() }
                     )
-                } else { if (loadingCount > 0) loadingCount-- }
+                } else { endLoad() }
             }
             HubTab.NOTES -> {
                 c.getNotes(
                     onSuccess = { list ->
                         notes = list.sortedWith(compareByDescending<NextcloudNote> { it.favorite }.thenByDescending { it.modified })
-                        if (loadingCount > 0) loadingCount--
+                        endLoad()
                     },
-                    onFailure = { err -> errorMessage = s.notesError(msg(err)); if (loadingCount > 0) loadingCount-- }
+                    onFailure = { err -> errorMessage = s.notesError(msg(err)); endLoad() }
                 )
             }
             HubTab.FILES -> {
@@ -137,30 +147,30 @@ class NextcloudViewModel : ViewModel() {
                     c.getFiles(currentFolderPath,
                         onSuccess = { list ->
                             files = list.sortedWith(compareByDescending<NextcloudFile> { it.isDirectory }.thenBy { it.name.lowercase() })
-                            if (loadingCount > 0) loadingCount--
+                            endLoad()
                         },
-                        onFailure = { err -> errorMessage = s.filesError(msg(err)); if (loadingCount > 0) loadingCount-- }
+                        onFailure = { err -> errorMessage = s.filesError(msg(err)); endLoad() }
                     )
-                } else { if (loadingCount > 0) loadingCount-- }
+                } else { endLoad() }
             }
             HubTab.CONTACTS -> {
                 if (selectedAddressBookHref.isEmpty()) {
-                    if (loadingCount > 0) loadingCount--
+                    endLoad()
                     loadAddressBooks()
                 } else {
                     c.getContacts(selectedAddressBookHref,
                         onSuccess = { list ->
                             contacts = list.sortedBy { it.fullName.lowercase() }
-                            if (loadingCount > 0) loadingCount--
+                            endLoad()
                         },
-                        onFailure = { err -> errorMessage = s.contactsError(msg(err)); if (loadingCount > 0) loadingCount-- }
+                        onFailure = { err -> errorMessage = s.contactsError(msg(err)); endLoad() }
                     )
                 }
             }
         }
     }
 
-    private fun refreshAndStop() { refreshData(); if (loadingCount > 0) loadingCount-- }
+    private fun refreshAndStop() { refreshData(); endLoad() }
 
     fun connect(serverUrl: String, username: String, password: String, onSaveCredentials: () -> Unit) {
         loadingCount++
@@ -178,12 +188,12 @@ class NextcloudViewModel : ViewModel() {
                     selectedTaskListHref = todo.first
                     selectedTaskListName = todo.second
                 }
-                if (loadingCount > 0) loadingCount--
+                endLoad()
                 refreshData()
             },
             onFailure = { err ->
                 errorMessage = s.connectionFailed(msg(err))
-                if (loadingCount > 0) loadingCount--
+                endLoad()
             }
         )
     }
@@ -205,9 +215,9 @@ class NextcloudViewModel : ViewModel() {
         client?.getTasks(href,
             onSuccess = { list ->
                 tasks = list.sortedWith(compareBy({ it.status == "COMPLETED" }, { it.due ?: "" }))
-                if (loadingCount > 0) loadingCount--
+                endLoad()
             },
-            onFailure = { err -> errorMessage = s.tasksError(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.tasksError(msg(err)); endLoad() }
         )
     }
 
@@ -216,7 +226,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.saveTask(task.copy(status = updated),
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.taskUpdateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.taskUpdateFailed(msg(err)); endLoad() }
         )
     }
 
@@ -224,7 +234,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.saveTask(NextcloudTask(uid, summary, description?.ifEmpty { null }, "NEEDS-ACTION", dueDate, selectedTaskListHref),
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.taskCreateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.taskCreateFailed(msg(err)); endLoad() }
         )
     }
 
@@ -232,7 +242,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.saveTask(task.copy(summary = summary, description = description?.ifEmpty { null }, due = dueDate?.ifEmpty { null }),
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.taskEditFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.taskEditFailed(msg(err)); endLoad() }
         )
     }
 
@@ -240,7 +250,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.deleteTask(task,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.taskDeleteFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.taskDeleteFailed(msg(err)); endLoad() }
         )
     }
 
@@ -248,7 +258,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.deleteEvent(event.calendarHref, event.id,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.eventDeleteFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.eventDeleteFailed(msg(err)); endLoad() }
         )
     }
 
@@ -256,7 +266,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.saveEvent(calendarHref, event,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.eventCreateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.eventCreateFailed(msg(err)); endLoad() }
         )
     }
 
@@ -265,31 +275,31 @@ class NextcloudViewModel : ViewModel() {
         val updated = event.copy(summary = summary, description = description?.ifEmpty { null }, location = location?.ifEmpty { null }, startTime = startTime, endTime = endTime)
         client?.saveEvent(event.calendarHref, updated,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.eventEditFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.eventEditFailed(msg(err)); endLoad() }
         )
     }
 
     fun createTaskList(name: String) {
         loadingCount++
         client?.createTaskList(name,
-            onSuccess = { client?.getTaskLists(onSuccess = { list -> taskLists = list; if (loadingCount > 0) loadingCount-- }, onFailure = { err -> errorMessage = s.listCreateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }) },
-            onFailure = { err -> errorMessage = s.listCreateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onSuccess = { client?.getTaskLists(onSuccess = { list -> taskLists = list; endLoad() }, onFailure = { err -> errorMessage = s.listCreateFailed(msg(err)); endLoad() }) },
+            onFailure = { err -> errorMessage = s.listCreateFailed(msg(err)); endLoad() }
         )
     }
 
     fun renameTaskList(newName: String) {
         loadingCount++
         client?.renameTaskList(selectedTaskListHref, newName,
-            onSuccess = { selectedTaskListName = newName; client?.getTaskLists(onSuccess = { list -> taskLists = list; if (loadingCount > 0) loadingCount-- }, onFailure = { err -> errorMessage = s.listRenameFailed(msg(err)); if (loadingCount > 0) loadingCount-- }) },
-            onFailure = { err -> errorMessage = s.listRenameFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onSuccess = { selectedTaskListName = newName; client?.getTaskLists(onSuccess = { list -> taskLists = list; endLoad() }, onFailure = { err -> errorMessage = s.listRenameFailed(msg(err)); endLoad() }) },
+            onFailure = { err -> errorMessage = s.listRenameFailed(msg(err)); endLoad() }
         )
     }
 
     fun deleteTaskList() {
         loadingCount++
         client?.deleteTaskList(selectedTaskListHref,
-            onSuccess = { selectedTaskListHref = ""; selectedTaskListName = ""; tasks = emptyList(); client?.getTaskLists(onSuccess = { list -> taskLists = list; if (loadingCount > 0) loadingCount-- }, onFailure = { err -> errorMessage = s.listDeleteFailed(msg(err)); if (loadingCount > 0) loadingCount-- }) },
-            onFailure = { err -> errorMessage = s.listDeleteFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onSuccess = { selectedTaskListHref = ""; selectedTaskListName = ""; tasks = emptyList(); client?.getTaskLists(onSuccess = { list -> taskLists = list; endLoad() }, onFailure = { err -> errorMessage = s.listDeleteFailed(msg(err)); endLoad() }) },
+            onFailure = { err -> errorMessage = s.listDeleteFailed(msg(err)); endLoad() }
         )
     }
 
@@ -297,7 +307,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.updateNote(note.id, note.title, note.content, note.category, !note.favorite,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.noteFavFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.noteFavFailed(msg(err)); endLoad() }
         )
     }
 
@@ -305,7 +315,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.createNote(title, content, category,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.noteCreateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.noteCreateFailed(msg(err)); endLoad() }
         )
     }
 
@@ -313,7 +323,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.updateNote(note.id, title, content, category, note.favorite,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.noteUpdateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.noteUpdateFailed(msg(err)); endLoad() }
         )
     }
 
@@ -321,7 +331,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.deleteNote(noteId,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.noteDeleteFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.noteDeleteFailed(msg(err)); endLoad() }
         )
     }
 
@@ -340,7 +350,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.deleteFile(path,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.fileDeleteFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.fileDeleteFailed(msg(err)); endLoad() }
         )
     }
 
@@ -348,7 +358,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.renameFile(path, newName,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.fileRenameFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.fileRenameFailed(msg(err)); endLoad() }
         )
     }
 
@@ -356,7 +366,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.createFolder(currentFolderPath, name,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.folderCreateError(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.folderCreateError(msg(err)); endLoad() }
         )
     }
 
@@ -364,31 +374,31 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.uploadFile(currentFolderPath, fileName, bytes,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.uploadFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.uploadFailed(msg(err)); endLoad() }
         )
     }
 
     fun createShareLink(file: NextcloudFile) {
         loadingCount++
         client?.createShareLink(file.path,
-            onSuccess = { url -> shareLink = url; if (loadingCount > 0) loadingCount-- },
-            onFailure = { err -> errorMessage = s.shareLinkFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onSuccess = { url -> shareLink = url; endLoad() },
+            onFailure = { err -> errorMessage = s.shareLinkFailed(msg(err)); endLoad() }
         )
     }
 
     fun getOnlineEditorUrl(fileHref: String, onSuccess: (String) -> Unit, onFailure: (Exception) -> Unit) {
         loadingCount++
         client?.getOnlineEditorUrl(fileHref,
-            onSuccess = { url -> if (loadingCount > 0) loadingCount--; onSuccess(url) },
-            onFailure = { err -> if (loadingCount > 0) loadingCount--; onFailure(err) }
+            onSuccess = { url -> endLoad(); onSuccess(url) },
+            onFailure = { err -> endLoad(); onFailure(err) }
         )
     }
 
     fun downloadFile(fileHref: String, onSuccess: (ByteArray) -> Unit) {
         loadingCount++
         client?.downloadFile(fileHref,
-            onSuccess = { bytes -> if (loadingCount > 0) loadingCount--; onSuccess(bytes) },
-            onFailure = { err -> errorMessage = s.downloadFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onSuccess = { bytes -> endLoad(); onSuccess(bytes) },
+            onFailure = { err -> errorMessage = s.downloadFailed(msg(err)); endLoad() }
         )
     }
 
@@ -402,13 +412,13 @@ class NextcloudViewModel : ViewModel() {
                 addressBooks = books
                 if (books.isNotEmpty() && selectedAddressBookHref.isEmpty()) {
                     val default = books.find { it.second.lowercase().contains("contact") || it.first.lowercase().contains("contact") } ?: books[0]
-                    if (loadingCount > 0) loadingCount--
+                    endLoad()
                     loadContactList(default.first, default.second)
                 } else {
-                    if (loadingCount > 0) loadingCount--
+                    endLoad()
                 }
             },
-            onFailure = { err -> errorMessage = s.contactsError(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.contactsError(msg(err)); endLoad() }
         )
     }
 
@@ -416,8 +426,8 @@ class NextcloudViewModel : ViewModel() {
         selectedAddressBookHref = href; selectedAddressBookName = name
         loadingCount++
         client?.getContacts(href,
-            onSuccess = { list -> contacts = list.sortedBy { it.fullName.lowercase() }; if (loadingCount > 0) loadingCount-- },
-            onFailure = { err -> errorMessage = s.contactsError(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onSuccess = { list -> contacts = list.sortedBy { it.fullName.lowercase() }; endLoad() },
+            onFailure = { err -> errorMessage = s.contactsError(msg(err)); endLoad() }
         )
     }
 
@@ -428,7 +438,7 @@ class NextcloudViewModel : ViewModel() {
         val contact = draft.copy(uid = java.util.UUID.randomUUID().toString(), addressBookHref = ab, href = "", rawVcard = null)
         client?.saveContact(contact,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.contactCreateFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.contactCreateFailed(msg(err)); endLoad() }
         )
     }
 
@@ -436,7 +446,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.saveContact(contact,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.contactEditFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.contactEditFailed(msg(err)); endLoad() }
         )
     }
 
@@ -444,7 +454,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.deleteContact(contact,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.contactDeleteFailed(msg(err)); if (loadingCount > 0) loadingCount-- }
+            onFailure = { err -> errorMessage = s.contactDeleteFailed(msg(err)); endLoad() }
         )
     }
 }

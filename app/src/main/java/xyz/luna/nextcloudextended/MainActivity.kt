@@ -262,10 +262,14 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                     language = language, onLanguageChange = { language = it; sharedPrefs.edit().putString("language", it.name).apply() },
                     onServerUrlChange = { serverUrl = it }, onUsernameChange = { username = it }, onPasswordChange = { password = it }, onAllowInsecureHttpChange = { allowInsecureHttp = it },
                     onConnect = {
-                        if (serverUrl.isEmpty() || username.isEmpty() || password.isEmpty()) { vm.errorMessage = s.fillAllFields; return@LoginScreen }
-                        if (serverUrl.startsWith("http://") && !allowInsecureHttp) { vm.errorMessage = s.insecureHttpBlocked; return@LoginScreen }
-                        vm.connect(serverUrl, username, password) {
-                            sharedPrefs.edit().putString("server_url", serverUrl).putString("username", username).putString("password", password).putBoolean("allow_insecure_http", allowInsecureHttp).apply()
+                        // Trim + default to https:// when the user omits the scheme, so OkHttp doesn't
+                        // reject a bare host like "cloud.example.com".
+                        val url = normalizeServerUrl(serverUrl)
+                        if (url != serverUrl) serverUrl = url
+                        if (url.isEmpty() || username.isEmpty() || password.isEmpty()) { vm.errorMessage = s.fillAllFields; return@LoginScreen }
+                        if (url.startsWith("http://") && !allowInsecureHttp) { vm.errorMessage = s.insecureHttpBlocked; return@LoginScreen }
+                        vm.connect(url, username, password) {
+                            sharedPrefs.edit().putString("server_url", url).putString("username", username).putString("password", password).putBoolean("allow_insecure_http", allowInsecureHttp).apply()
                         }
                     })
             } else {
@@ -557,6 +561,15 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         }
     }
     }
+}
+
+// Normalizes a user-entered server URL: trims whitespace, prepends https:// when no scheme is
+// given, and drops trailing slashes. Returns "" unchanged so the empty-field check still fires.
+private fun normalizeServerUrl(raw: String): String {
+    val u = raw.trim()
+    if (u.isEmpty()) return u
+    val withScheme = if (u.startsWith("http://") || u.startsWith("https://")) u else "https://$u"
+    return withScheme.trimEnd('/')
 }
 
 private fun getFileNameFromUri(context: Context, uri: Uri): String? {

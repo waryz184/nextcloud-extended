@@ -37,7 +37,7 @@ class CalDavClient(
 
     val baseUrl: String get() = if (serverUrl.endsWith("/")) serverUrl.dropLast(1) else serverUrl
     fun getAuthorizationHeader(): String = credentials
-    fun buildFileUrl(fileHref: String) = "$baseUrl$fileHref"
+    fun buildFileUrl(fileHref: String) = "$baseUrl${encodePath(fileHref)}"
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private fun runOnMain(action: () -> Unit) { mainHandler.post(action) }
@@ -66,7 +66,7 @@ class CalDavClient(
         onSuccess: (eventCalendars: List<CalendarInfo>, taskLists: List<Pair<String, String>>) -> Unit,
         onFailure: (Exception) -> Unit
     ) {
-        val url = "$baseUrl/remote.php/dav/calendars/$username/"
+        val url = "$baseUrl${encodePath("/remote.php/dav/calendars/$username/")}"
 
         val propfindBody = """<?xml version="1.0" encoding="utf-8" ?>
 <d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://apple.com/ns/ical/">
@@ -117,7 +117,7 @@ class CalDavClient(
 
     // Fetch all VEVENTs in a calendar — tags each event with calendarHref for multi-cal support
     fun getEvents(calendarHref: String, onSuccess: (List<CalendarEvent>) -> Unit, onFailure: (Exception) -> Unit) {
-        val url = "$baseUrl$calendarHref"
+        val url = "$baseUrl${encodePath(calendarHref)}"
 
         // Ask the server to expand recurring events (RRULE) into concrete occurrences within
         // this window — recurrence math (BYDAY, EXDATE, leap years, ...) is delegated to the
@@ -172,7 +172,7 @@ class CalDavClient(
     }
 
     fun getTasks(calendarHref: String, onSuccess: (List<NextcloudTask>) -> Unit, onFailure: (Exception) -> Unit) {
-        val url = "$baseUrl$calendarHref"
+        val url = "$baseUrl${encodePath(calendarHref)}"
 
         val reportBody = """<?xml version="1.0" encoding="utf-8" ?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
@@ -215,8 +215,8 @@ class CalDavClient(
     }
 
     fun saveTask(task: NextcloudTask, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
-        val fileUrl = if (task.calendarHref.endsWith("/")) "$baseUrl${task.calendarHref}${task.uid}.ics"
-                      else "$baseUrl${task.calendarHref}/${task.uid}.ics"
+        val fileUrl = if (task.calendarHref.endsWith("/")) "$baseUrl${encodePath("${task.calendarHref}${task.uid}.ics")}"
+                      else "$baseUrl${encodePath("${task.calendarHref}/${task.uid}.ics")}"
 
         val icsBody = buildString {
             appendLine("BEGIN:VCALENDAR")
@@ -249,8 +249,8 @@ class CalDavClient(
     }
 
     fun saveEvent(calendarHref: String, event: CalendarEvent, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
-        val fileUrl = if (calendarHref.endsWith("/")) "$baseUrl$calendarHref${event.id}.ics"
-                      else "$baseUrl$calendarHref/${event.id}.ics"
+        val fileUrl = if (calendarHref.endsWith("/")) "$baseUrl${encodePath("$calendarHref${event.id}.ics")}"
+                      else "$baseUrl${encodePath("$calendarHref/${event.id}.ics")}"
 
         val startIcs = formatToIcsDate(event.startTime)
         val endIcs = formatToIcsDate(event.endTime)
@@ -287,8 +287,8 @@ class CalDavClient(
     }
 
     fun deleteEvent(calendarHref: String, eventId: String, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
-        val url = if (calendarHref.endsWith("/")) "$baseUrl$calendarHref$eventId.ics"
-                  else "$baseUrl$calendarHref/$eventId.ics"
+        val url = if (calendarHref.endsWith("/")) "$baseUrl${encodePath("$calendarHref$eventId.ics")}"
+                  else "$baseUrl${encodePath("$calendarHref/$eventId.ics")}"
         val request = Request.Builder().url(url).addHeader("Authorization", credentials).delete().build()
         client.newCall(request).enqueueTracked(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
@@ -368,7 +368,7 @@ class CalDavClient(
     // Downloads a file's raw bytes for in-app opening
     fun downloadFile(fileHref: String, onSuccess: (ByteArray) -> Unit, onFailure: (Exception) -> Unit) {
         val request = Request.Builder()
-            .url("$baseUrl$fileHref")
+            .url("$baseUrl${encodePath(fileHref)}")
             .addHeader("Authorization", credentials)
             .get()
             .build()
@@ -388,8 +388,8 @@ class CalDavClient(
     }
 
     fun deleteTask(task: NextcloudTask, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
-        val fileUrl = if (task.calendarHref.endsWith("/")) "$baseUrl${task.calendarHref}${task.uid}.ics"
-                      else "$baseUrl${task.calendarHref}/${task.uid}.ics"
+        val fileUrl = if (task.calendarHref.endsWith("/")) "$baseUrl${encodePath("${task.calendarHref}${task.uid}.ics")}"
+                      else "$baseUrl${encodePath("${task.calendarHref}/${task.uid}.ics")}"
 
         val request = Request.Builder()
             .url(fileUrl)
@@ -496,7 +496,7 @@ class CalDavClient(
 </d:propfind>""".trimIndent()
 
         val request = Request.Builder()
-            .url("$baseUrl$cleanPath")
+            .url("$baseUrl${encodePath(cleanPath)}")
             .addHeader("Authorization", credentials)
             .addHeader("Depth", "1")
             .addHeader("Content-Type", "application/xml; charset=utf-8")
@@ -515,7 +515,7 @@ class CalDavClient(
     }
 
     fun deleteFile(fileHref: String, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
-        val request = Request.Builder().url("$baseUrl$fileHref").addHeader("Authorization", credentials).delete().build()
+        val request = Request.Builder().url("$baseUrl${encodePath(fileHref)}").addHeader("Authorization", credentials).delete().build()
         client.newCall(request).enqueueTracked(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
             override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
@@ -527,7 +527,7 @@ class CalDavClient(
 
     fun createFolder(parentHref: String, folderName: String, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
         val cleanParent = if (parentHref.endsWith("/")) parentHref else "$parentHref/"
-        val request = Request.Builder().url("$baseUrl$cleanParent$folderName/").addHeader("Authorization", credentials).method("MKCOL", null).build()
+        val request = Request.Builder().url("$baseUrl${encodePath("$cleanParent$folderName/")}").addHeader("Authorization", credentials).method("MKCOL", null).build()
         client.newCall(request).enqueueTracked(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
             override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
@@ -540,7 +540,7 @@ class CalDavClient(
     fun uploadFile(parentHref: String, fileName: String, fileBytes: ByteArray, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
         val cleanParent = if (parentHref.endsWith("/")) parentHref else "$parentHref/"
         val request = Request.Builder()
-            .url("$baseUrl$cleanParent$fileName")
+            .url("$baseUrl${encodePath("$cleanParent$fileName")}")
             .addHeader("Authorization", credentials)
             .put(fileBytes.toRequestBody("application/octet-stream".toMediaType()))
             .build()
@@ -556,7 +556,7 @@ class CalDavClient(
 
     fun createTaskList(listName: String, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
         val listId = UUID.randomUUID().toString()
-        val url = "$baseUrl/remote.php/dav/calendars/$username/$listId/"
+        val url = "$baseUrl${encodePath("/remote.php/dav/calendars/$username/$listId/")}"
         val body = """<?xml version="1.0" encoding="utf-8" ?>
 <c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
   <d:set><d:prop>
@@ -579,7 +579,7 @@ class CalDavClient(
     }
 
     fun deleteTaskList(calendarHref: String, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
-        val request = Request.Builder().url("$baseUrl$calendarHref").addHeader("Authorization", credentials).delete().build()
+        val request = Request.Builder().url("$baseUrl${encodePath(calendarHref)}").addHeader("Authorization", credentials).delete().build()
         client.newCall(request).enqueueTracked(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
             override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
@@ -595,7 +595,7 @@ class CalDavClient(
   <d:displayname>${escapeXml(newName)}</d:displayname>
 </d:prop></d:set></d:propertyupdate>""".trimIndent()
 
-        val request = Request.Builder().url("$baseUrl$calendarHref").addHeader("Authorization", credentials)
+        val request = Request.Builder().url("$baseUrl${encodePath(calendarHref)}").addHeader("Authorization", credentials)
             .addHeader("Content-Type", "application/xml; charset=utf-8")
             .method("PROPPATCH", body.toRequestBody("application/xml".toMediaType())).build()
 
@@ -612,13 +612,14 @@ class CalDavClient(
         val isDir = sourceHref.endsWith("/")
         val cleanHref = if (isDir) sourceHref.dropLast(1) else sourceHref
         val parentHref = cleanHref.substring(0, cleanHref.lastIndexOf('/') + 1)
-        val encodedNewName = java.net.URLEncoder.encode(newName, "UTF-8").replace("+", "%20")
-        val destPath = "$parentHref$encodedNewName" + (if (isDir) "/" else "")
+        // Hrefs are stored decoded; encodePath re-encodes both the source and the destination
+        // (including any special char in newName) per segment for a valid WebDAV MOVE.
+        val destHref = "$parentHref$newName" + (if (isDir) "/" else "")
 
         val request = Request.Builder()
-            .url("$baseUrl$sourceHref")
+            .url("$baseUrl${encodePath(sourceHref)}")
             .addHeader("Authorization", credentials)
-            .addHeader("Destination", "$baseUrl$destPath")
+            .addHeader("Destination", "$baseUrl${encodePath(destHref)}")
             .addHeader("Overwrite", "F")
             .method("MOVE", null).build()
 
@@ -635,7 +636,7 @@ class CalDavClient(
 
     // Lists the user's address books (PROPFIND on the CardDAV home set).
     fun getAddressBooks(onSuccess: (List<Pair<String, String>>) -> Unit, onFailure: (Exception) -> Unit) {
-        val url = "$baseUrl/remote.php/dav/addressbooks/users/$username/"
+        val url = "$baseUrl${encodePath("/remote.php/dav/addressbooks/users/$username/")}"
         val propfindBody = """<?xml version="1.0" encoding="utf-8" ?>
 <d:propfind xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
   <d:prop>
@@ -673,7 +674,7 @@ class CalDavClient(
 </card:addressbook-query>""".trimIndent()
 
         val request = Request.Builder()
-            .url("$baseUrl$addressBookHref")
+            .url("$baseUrl${encodePath(addressBookHref)}")
             .addHeader("Authorization", credentials)
             .addHeader("Depth", "1")
             .addHeader("Content-Type", "application/xml; charset=utf-8")
@@ -692,10 +693,10 @@ class CalDavClient(
     }
 
     fun saveContact(contact: NextcloudContact, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
-        val fileUrl = if (contact.href.isNotEmpty()) "$baseUrl${contact.href}"
+        val fileUrl = if (contact.href.isNotEmpty()) "$baseUrl${encodePath(contact.href)}"
                       else {
                           val ab = if (contact.addressBookHref.endsWith("/")) contact.addressBookHref else "${contact.addressBookHref}/"
-                          "$baseUrl$ab${contact.uid}.vcf"
+                          "$baseUrl${encodePath("$ab${contact.uid}.vcf")}"
                       }
 
         val request = Request.Builder()
@@ -715,7 +716,7 @@ class CalDavClient(
     }
 
     fun deleteContact(contact: NextcloudContact, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
-        val request = Request.Builder().url("$baseUrl${contact.href}").addHeader("Authorization", credentials).delete().build()
+        val request = Request.Builder().url("$baseUrl${encodePath(contact.href)}").addHeader("Authorization", credentials).delete().build()
         client.newCall(request).enqueueTracked(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
             override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
@@ -789,22 +790,18 @@ class CalDavClient(
 
         for (resp in responseRegex.findAll(xml)) {
             val respStr = resp.value
-            val href = hrefRegex.find(respStr)?.groupValues?.get(1) ?: ""
-            if (href.isEmpty() || !calendarResourceTypeRegex.containsMatchIn(respStr)) continue
+            val hrefRaw = hrefRegex.find(respStr)?.groupValues?.get(1) ?: ""
+            if (hrefRaw.isEmpty() || !calendarResourceTypeRegex.containsMatchIn(respStr)) continue
+            // Store the href decoded so it lives in the same space as file/contact hrefs;
+            // encodePath() re-encodes it per segment when a request URL is built.
+            val href = runCatching { java.net.URLDecoder.decode(hrefRaw, "UTF-8") }.getOrDefault(hrefRaw)
             val supportedComps = compRegex.findAll(respStr).map { it.groupValues[1] }.toSet()
             if (filterComponent !in supportedComps) continue
-            val displayname = displaynameRegex.find(respStr)?.groupValues?.get(1) ?: "Calendar"
+            val displayname = displaynameRegex.find(respStr)?.groupValues?.get(1)?.let { unescapeXml(it) } ?: "Calendar"
             val colorHex = colorRegex.find(respStr)?.groupValues?.get(1)?.let { "#${it.take(6)}" } ?: ""
             result.add(CalendarInfo(href, displayname, colorHex))
         }
         return result
-    }
-
-    private fun unescapeXml(xml: String): String {
-        var r = xml.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'")
-        r = Regex("&#([0-9]+);").replace(r) { it.groupValues[1].toInt().toChar().toString() }
-        r = Regex("&#x([0-9a-fA-F]+);").replace(r) { it.groupValues[1].toInt(16).toChar().toString() }
-        return r
     }
 
     private fun parseEventsFromReport(xml: String, calendarHref: String): List<CalendarEvent> {
@@ -833,8 +830,9 @@ class CalDavClient(
         val addressbookTypeRegex = Regex("<[a-zA-Z0-9:]*addressbook[\\s/>]")
         for (resp in responseRegex.findAll(xml)) {
             val respStr = resp.value
-            val href = hrefRegex.find(respStr)?.groupValues?.get(1) ?: ""
-            if (href.isEmpty() || !addressbookTypeRegex.containsMatchIn(respStr)) continue
+            val hrefRaw = hrefRegex.find(respStr)?.groupValues?.get(1) ?: ""
+            if (hrefRaw.isEmpty() || !addressbookTypeRegex.containsMatchIn(respStr)) continue
+            val href = runCatching { java.net.URLDecoder.decode(hrefRaw, "UTF-8") }.getOrDefault(hrefRaw)
             val displayname = displaynameRegex.find(respStr)?.groupValues?.get(1)?.let { unescapeXml(it) } ?: "Contacts"
             result.add(Pair(href, displayname))
         }
@@ -854,7 +852,7 @@ class CalDavClient(
             val href = hrefRegex.find(respStr)?.groupValues?.get(1)?.let {
                 runCatching { java.net.URLDecoder.decode(it, "UTF-8") }.getOrDefault(it)
             } ?: ""
-            parseVcard(vcard, addressBookHref, href)?.let { contacts.add(it) }
+            contacts.add(parseVcard(vcard, addressBookHref, href))
         }
         return contacts
     }
@@ -905,23 +903,6 @@ class CalDavClient(
             .map { Pair(it.groupValues[1], it.groupValues[2].trimEnd('\r')) }
             .toList()
 
-    // Pulls the meaningful TYPE token out of a vCard parameter string, skipping generic markers.
-    private fun extractType(params: String): String =
-        Regex("TYPE=([^;:]*)", RegexOption.IGNORE_CASE).findAll(params)
-            .flatMap { it.groupValues[1].split(",").asSequence() }
-            .map { it.trim().uppercase() }
-            .firstOrNull { it.isNotBlank() && it !in setOf("VOICE", "INTERNET", "PREF") } ?: ""
-
-    // Normalises a vCard BDAY ("19900615", "1990-06-15", "1990-06-15T…") to "YYYY-MM-DD".
-    private fun normalizeBday(raw: String): String? {
-        val v = raw.substringBefore("T")
-        return when {
-            Regex("^\\d{8}$").matches(v) -> "${v.substring(0, 4)}-${v.substring(4, 6)}-${v.substring(6, 8)}"
-            Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(v) -> v
-            else -> v.takeIf { it.isNotBlank() }
-        }
-    }
-
     // Extracts (base64, mimeType) from the PHOTO property — handles vCard 3.0 inline and 4.0 data URI.
     private fun parsePhoto(unfolded: String): Pair<String?, String?> {
         val (params, value) = vcardEntries(unfolded, "PHOTO").firstOrNull() ?: return null to null
@@ -936,23 +917,6 @@ class CalDavClient(
         val typeTok = Regex("TYPE=([^;:]*)", RegexOption.IGNORE_CASE).find(params)?.groupValues?.get(1)?.trim()
         val mime = typeTok?.takeIf { it.isNotBlank() }?.let { "image/${it.lowercase()}" }
         return v to mime
-    }
-
-    // Splits a vCard value on UNescaped separators (';' for structured, ',' for lists), unescaping each part.
-    private fun splitVcardComponents(value: String, sep: Char): List<String> {
-        val parts = mutableListOf<String>()
-        val sb = StringBuilder()
-        var i = 0
-        while (i < value.length) {
-            val c = value[i]
-            when {
-                c == '\\' && i + 1 < value.length -> { sb.append(c); sb.append(value[i + 1]); i += 2 }
-                c == sep -> { parts.add(sb.toString()); sb.clear(); i++ }
-                else -> { sb.append(c); i++ }
-            }
-        }
-        parts.add(sb.toString())
-        return parts.map { unescapeIcsText(it).trim() }
     }
 
     private fun parseIcsTasks(icsContent: String, calendarHref: String): List<NextcloudTask> {
@@ -1006,81 +970,6 @@ class CalDavClient(
         return events
     }
 
-    private fun formatIcsDate(dateStr: String?): String? {
-        if (dateStr == null) return null
-        val clean = dateStr.trim()
-        if (clean.length >= 8) {
-            val y = clean.substring(0, 4); val m = clean.substring(4, 6); val d = clean.substring(6, 8)
-            if (clean.length >= 15 && clean.contains("T")) {
-                val h = clean.substring(9, 11); val min = clean.substring(11, 13)
-                return "$y-$m-$d $h:$min"
-            }
-            return "$y-$m-$d"
-        }
-        return dateStr
-    }
-
-    private fun formatToIcsDate(dateTimeStr: String?): String? {
-        if (dateTimeStr == null) return null
-        val clean = dateTimeStr.trim()
-        if (clean.length == 16 && clean[4] == '-' && clean[7] == '-' && clean[10] == ' ' && clean[13] == ':') {
-            return "${clean.substring(0,4)}${clean.substring(5,7)}${clean.substring(8,10)}T${clean.substring(11,13)}${clean.substring(14,16)}00Z"
-        }
-        if (clean.length == 10 && clean[4] == '-' && clean[7] == '-') {
-            return "${clean.substring(0,4)}${clean.substring(5,7)}${clean.substring(8,10)}"
-        }
-        return clean.replace("-", "").replace(":", "").replace(" ", "T")
-    }
-
-    // ── Escaping helpers ─────────────────────────────────────────────────────────
-
-    // Escapes a value for inclusion in a WebDAV/CalDAV XML body (e.g. <d:displayname>).
-    // Without this, a list named "R&D" or "A < B" produces malformed XML and the request fails.
-    private fun escapeXml(s: String): String =
-        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            .replace("\"", "&quot;").replace("'", "&apos;")
-
-    // Escapes an iCalendar TEXT value per RFC 5545 §3.3.11: backslash, semicolon, comma and
-    // newlines must be escaped, otherwise a summary like "Budget, plan; review" is mis-parsed.
-    private fun escapeIcsText(s: String): String =
-        s.replace("\\", "\\\\")
-            .replace(";", "\\;")
-            .replace(",", "\\,")
-            .replace("\r\n", "\n")
-            .replace("\r", "\n")
-            .replace("\n", "\\n")
-
-    // Inverse of escapeIcsText. Single pass so "C:\\new" (escaped backslash) is not read as a
-    // newline. Also fixes display of events written by other clients that escape ,/;/\ correctly.
-    private fun unescapeIcsText(s: String): String {
-        val sb = StringBuilder(s.length)
-        var i = 0
-        while (i < s.length) {
-            val c = s[i]
-            if (c == '\\' && i + 1 < s.length) {
-                when (val n = s[i + 1]) {
-                    'n', 'N' -> sb.append('\n')
-                    '\\' -> sb.append('\\')
-                    ',' -> sb.append(',')
-                    ';' -> sb.append(';')
-                    else -> sb.append(n)
-                }
-                i += 2
-            } else {
-                sb.append(c)
-                i++
-            }
-        }
-        return sb.toString()
-    }
-
-    // Builds a date property line, marking 8-digit (date-only) values with VALUE=DATE so the
-    // server doesn't reject e.g. "DUE:20250628Z" (a date with a UTC suffix is invalid iCal).
-    private fun icsDateLine(name: String, value: String?): String? {
-        if (value == null) return null
-        return if (value.length == 8) "$name;VALUE=DATE:$value" else "$name:$value"
-    }
-
     private fun parseFiles(xml: String, requestPath: String): List<NextcloudFile> {
         val files = mutableListOf<NextcloudFile>()
         val responseRegex = Regex("<d:response[\\s\\S]*?</d:response>")
@@ -1096,7 +985,7 @@ class CalDavClient(
             var href = hrefRegex.find(respStr)?.groupValues?.get(1) ?: ""
             href = java.net.URLDecoder.decode(href, "UTF-8")
             if (href.trimEnd('/') == cleanReqPath) continue
-            val displayName = displaynameRegex.find(respStr)?.groupValues?.get(1)
+            val displayName = displaynameRegex.find(respStr)?.groupValues?.get(1)?.let { unescapeXml(it) }
                 ?: href.split("/").lastOrNull { it.isNotEmpty() } ?: "Sans nom"
             val size = contentLengthRegex.find(respStr)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
             val lastModified = lastModifiedRegex.find(respStr)?.groupValues?.get(1) ?: ""
