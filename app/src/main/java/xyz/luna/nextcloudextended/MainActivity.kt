@@ -25,6 +25,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -49,6 +50,24 @@ import java.util.UUID
 enum class HubTab { CALENDAR, TASKS, NOTES, CONTACTS, FILES }
 enum class CalendarViewMode { DAY, WEEK, MONTH, YEAR }
 enum class OfficeViewerType { POI, ONLINE }
+
+val DEFAULT_PINNED_TABS = listOf(HubTab.CALENDAR, HubTab.NOTES, HubTab.FILES)
+
+fun HubTab.icon(): ImageVector = when (this) {
+    HubTab.CALENDAR -> Icons.Default.DateRange
+    HubTab.TASKS -> Icons.Default.List
+    HubTab.NOTES -> Icons.Default.Edit
+    HubTab.CONTACTS -> Icons.Default.Person
+    HubTab.FILES -> Icons.Default.Folder
+}
+
+fun HubTab.label(s: Strings): String = when (this) {
+    HubTab.CALENDAR -> s.tabCalendar
+    HubTab.TASKS -> s.tabTasks
+    HubTab.NOTES -> s.tabNotes
+    HubTab.CONTACTS -> s.tabContacts
+    HubTab.FILES -> s.tabFiles
+}
 
 private val officeExtensions = setOf("xlsx", "xls", "docx", "pptx", "csv")
 private data class OfficeViewData(val fileName: String, val bytes: ByteArray?, val filePath: String)
@@ -91,6 +110,10 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         vm.officeViewerPref = sharedPrefs.getString("office_viewer_pref", null)
             ?.let { runCatching { OfficeViewerType.valueOf(it) }.getOrNull() }
             ?: OfficeViewerType.POI
+        vm.pinnedTabs = sharedPrefs.getString("pinned_tabs", null)
+            ?.split(",")?.mapNotNull { runCatching { HubTab.valueOf(it) }.getOrNull() }
+            ?.takeIf { it.isNotEmpty() && it.size < HubTab.entries.size }
+            ?: DEFAULT_PINNED_TABS
     }
     val s = stringsFor(language)
 
@@ -146,7 +169,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(if (!vm.isConnected) "Nextcloud Extended" else when (vm.currentTab) { HubTab.CALENDAR -> s.tabCalendar; HubTab.TASKS -> s.tabTasks; HubTab.NOTES -> s.tabNotes; HubTab.CONTACTS -> s.tabContacts; HubTab.FILES -> s.tabFiles }) },
+                title = { Text(if (!vm.isConnected) "Nextcloud Extended" else vm.currentTab.label(s)) },
                 actions = {
                     if (vm.isConnected) {
                         IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, s.settings) }
@@ -163,7 +186,8 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         bottomBar = {
             if (vm.isConnected) {
                 val uncompletedTasks = vm.tasks.count { it.status != "COMPLETED" }
-                val overflowTabs = listOf(HubTab.TASKS, HubTab.CONTACTS)
+                val overflowTabs = HubTab.entries.filter { it !in vm.pinnedTabs }
+                fun badgeFor(tab: HubTab): Int = if (tab == HubTab.TASKS) uncompletedTasks else 0
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -177,12 +201,22 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                         shadowElevation = 4.dp
                     ) {
                         Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                            NavigationBarItem(selected = vm.currentTab == HubTab.CALENDAR, onClick = { vm.currentTab = HubTab.CALENDAR; vm.refreshData() }, label = null, alwaysShowLabel = false, icon = { Icon(Icons.Default.DateRange, s.tabCalendar) })
-                            NavigationBarItem(selected = vm.currentTab == HubTab.NOTES, onClick = { vm.currentTab = HubTab.NOTES; vm.refreshData() }, label = null, alwaysShowLabel = false, icon = { Icon(Icons.Default.Edit, s.tabNotes) })
-                            NavigationBarItem(selected = vm.currentTab == HubTab.FILES, onClick = { vm.currentTab = HubTab.FILES; vm.refreshData() }, label = null, alwaysShowLabel = false, icon = { Icon(Icons.Default.Folder, s.tabFiles) })
+                            vm.pinnedTabs.forEach { tab ->
+                                NavigationBarItem(
+                                    selected = vm.currentTab == tab,
+                                    onClick = { vm.currentTab = tab; vm.refreshData() },
+                                    label = null,
+                                    alwaysShowLabel = false,
+                                    icon = {
+                                        BadgedBox(badge = { if (badgeFor(tab) > 0) Badge { Text("${badgeFor(tab)}") } }) {
+                                            Icon(tab.icon(), tab.label(s))
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
-                    Box {
+                    if (overflowTabs.isNotEmpty()) Box {
                         FilledIconButton(
                             onClick = { showMoreMenu = true },
                             modifier = Modifier.size(64.dp),
@@ -192,23 +226,21 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                                 contentColor = if (vm.currentTab in overflowTabs) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         ) {
-                            BadgedBox(badge = { if (uncompletedTasks > 0 && vm.currentTab !in overflowTabs) Badge { Text("$uncompletedTasks") } }) {
+                            val overflowBadge = overflowTabs.filter { it != vm.currentTab }.sumOf { badgeFor(it) }
+                            BadgedBox(badge = { if (overflowBadge > 0) Badge { Text("$overflowBadge") } }) {
                                 Icon(Icons.Default.Add, s.moreOptions)
                             }
                         }
                         DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text(s.tabTasks) },
-                                leadingIcon = {
-                                    BadgedBox(badge = { if (uncompletedTasks > 0) Badge { Text("$uncompletedTasks") } }) { Icon(Icons.Default.List, null) }
-                                },
-                                onClick = { vm.currentTab = HubTab.TASKS; vm.refreshData(); showMoreMenu = false }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(s.tabContacts) },
-                                leadingIcon = { Icon(Icons.Default.Person, null) },
-                                onClick = { vm.currentTab = HubTab.CONTACTS; vm.refreshData(); showMoreMenu = false }
-                            )
+                            overflowTabs.forEach { tab ->
+                                DropdownMenuItem(
+                                    text = { Text(tab.label(s)) },
+                                    leadingIcon = {
+                                        BadgedBox(badge = { if (badgeFor(tab) > 0) Badge { Text("${badgeFor(tab)}") } }) { Icon(tab.icon(), null) }
+                                    },
+                                    onClick = { vm.currentTab = tab; vm.refreshData(); showMoreMenu = false }
+                                )
+                            }
                         }
                     }
                 }
@@ -513,6 +545,11 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                     onOfficeViewerPrefChange = { pref ->
                         vm.officeViewerPref = pref
                         sharedPrefs.edit().putString("office_viewer_pref", pref.name).apply()
+                    },
+                    pinnedTabs = vm.pinnedTabs,
+                    onPinnedTabsChange = { tabs ->
+                        vm.pinnedTabs = tabs
+                        sharedPrefs.edit().putString("pinned_tabs", tabs.joinToString(",") { it.name }).apply()
                     },
                     onDismiss = { showSettings = false }
                 )

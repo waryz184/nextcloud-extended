@@ -49,6 +49,7 @@ class NextcloudViewModel : ViewModel() {
     var contacts by mutableStateOf<List<NextcloudContact>>(emptyList())
 
     var officeViewerPref by mutableStateOf(OfficeViewerType.POI)
+    var pinnedTabs by mutableStateOf(DEFAULT_PINNED_TABS)
 
     var errorMessage by mutableStateOf<String?>(null)
     var shareLink by mutableStateOf<String?>(null)
