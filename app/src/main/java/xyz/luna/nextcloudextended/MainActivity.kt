@@ -15,6 +15,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -114,6 +115,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     var pdfToView by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
     var officeToView by remember { mutableStateOf<OfficeViewData?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -161,12 +163,54 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         bottomBar = {
             if (vm.isConnected) {
                 val uncompletedTasks = vm.tasks.count { it.status != "COMPLETED" }
-                NavigationBar {
-                    NavigationBarItem(selected = vm.currentTab == HubTab.CALENDAR, onClick = { vm.currentTab = HubTab.CALENDAR; vm.refreshData() }, label = { Text(s.tabCalendar) }, icon = { Icon(Icons.Default.DateRange, s.tabCalendar) })
-                    NavigationBarItem(selected = vm.currentTab == HubTab.TASKS, onClick = { vm.currentTab = HubTab.TASKS; vm.refreshData() }, label = { Text(s.tabTasks) }, icon = { BadgedBox(badge = { if (uncompletedTasks > 0) Badge { Text("$uncompletedTasks") } }) { Icon(Icons.Default.List, s.tabTasks) } })
-                    NavigationBarItem(selected = vm.currentTab == HubTab.NOTES, onClick = { vm.currentTab = HubTab.NOTES; vm.refreshData() }, label = { Text(s.tabNotes) }, icon = { Icon(Icons.Default.Edit, s.tabNotes) })
-                    NavigationBarItem(selected = vm.currentTab == HubTab.CONTACTS, onClick = { vm.currentTab = HubTab.CONTACTS; vm.refreshData() }, label = { Text(s.tabContacts) }, icon = { Icon(Icons.Default.Person, s.tabContacts) })
-                    NavigationBarItem(selected = vm.currentTab == HubTab.FILES, onClick = { vm.currentTab = HubTab.FILES; vm.refreshData() }, label = { Text(s.tabFiles) }, icon = { Icon(Icons.Default.Folder, s.tabFiles) })
+                val overflowTabs = listOf(HubTab.TASKS, HubTab.CONTACTS)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        modifier = Modifier.weight(1f).height(64.dp),
+                        shape = RoundedCornerShape(32.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 3.dp,
+                        shadowElevation = 4.dp
+                    ) {
+                        Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                            NavigationBarItem(selected = vm.currentTab == HubTab.CALENDAR, onClick = { vm.currentTab = HubTab.CALENDAR; vm.refreshData() }, label = null, alwaysShowLabel = false, icon = { Icon(Icons.Default.DateRange, s.tabCalendar) })
+                            NavigationBarItem(selected = vm.currentTab == HubTab.NOTES, onClick = { vm.currentTab = HubTab.NOTES; vm.refreshData() }, label = null, alwaysShowLabel = false, icon = { Icon(Icons.Default.Edit, s.tabNotes) })
+                            NavigationBarItem(selected = vm.currentTab == HubTab.FILES, onClick = { vm.currentTab = HubTab.FILES; vm.refreshData() }, label = null, alwaysShowLabel = false, icon = { Icon(Icons.Default.Folder, s.tabFiles) })
+                        }
+                    }
+                    Box {
+                        FilledIconButton(
+                            onClick = { showMoreMenu = true },
+                            modifier = Modifier.size(64.dp),
+                            shape = CircleShape,
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = if (vm.currentTab in overflowTabs) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = if (vm.currentTab in overflowTabs) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        ) {
+                            BadgedBox(badge = { if (uncompletedTasks > 0 && vm.currentTab !in overflowTabs) Badge { Text("$uncompletedTasks") } }) {
+                                Icon(Icons.Default.Add, s.moreOptions)
+                            }
+                        }
+                        DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(s.tabTasks) },
+                                leadingIcon = {
+                                    BadgedBox(badge = { if (uncompletedTasks > 0) Badge { Text("$uncompletedTasks") } }) { Icon(Icons.Default.List, null) }
+                                },
+                                onClick = { vm.currentTab = HubTab.TASKS; vm.refreshData(); showMoreMenu = false }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(s.tabContacts) },
+                                leadingIcon = { Icon(Icons.Default.Person, null) },
+                                onClick = { vm.currentTab = HubTab.CONTACTS; vm.refreshData(); showMoreMenu = false }
+                            )
+                        }
+                    }
                 }
             }
         },
