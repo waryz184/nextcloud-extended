@@ -96,8 +96,21 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         when (currentTab) {
             HubTab.CALENDAR -> {
-                if (loadingCount > 0) loadingCount--
-                loadAllActiveCalendarsEvents()
+                c.getAllCalendarData(
+                    onSuccess = { eventCals, _ ->
+                        val oldHrefs = calendarInfos.map { it.href }.toSet()
+                        val newHrefs = eventCals.map { it.href }.toSet()
+                        calendarInfos = eventCals
+                        activeCalendarHrefs = (activeCalendarHrefs intersect newHrefs) + (newHrefs - oldHrefs)
+                        if (loadingCount > 0) loadingCount--
+                        loadAllActiveCalendarsEvents()
+                    },
+                    onFailure = { err ->
+                        errorMessage = s.calendarError(msg(err))
+                        if (loadingCount > 0) loadingCount--
+                        loadAllActiveCalendarsEvents()
+                    }
+                )
             }
             HubTab.TASKS -> {
                 if (selectedTaskListHref.isNotEmpty()) {
