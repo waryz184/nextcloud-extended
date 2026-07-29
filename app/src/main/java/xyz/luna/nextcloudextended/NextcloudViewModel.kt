@@ -19,6 +19,11 @@ class NextcloudViewModel : ViewModel() {
     var isConnected by mutableStateOf(false)
     var client by mutableStateOf<CalDavClient?>(null)
 
+    // Set once an automatic login with the stored credentials has been attempted. Living in
+    // the ViewModel, it survives configuration changes (no re-trigger on rotation) but resets
+    // on process death, so every fresh app start tries to reconnect once.
+    var autoLoginAttempted = false
+
     var loadingCount by mutableIntStateOf(0)
     val isLoading get() = loadingCount > 0
 

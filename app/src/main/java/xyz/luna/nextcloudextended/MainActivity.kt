@@ -102,6 +102,11 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         )
     }
     LaunchedEffect(language) { vm.language = language }
+    // True once the saved preferences have been read — prevents a one-frame flash of the
+    // login form before the auto-login check below runs.
+    var prefsLoaded by remember { mutableStateOf(false) }
+    // True once an automatic reconnect with the stored credentials has been kicked off.
+    var autoLoginStarted by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         serverUrl = sharedPrefs.getString("server_url", "") ?: ""
         username = sharedPrefs.getString("username", "") ?: ""
@@ -114,6 +119,21 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
             ?.split(",")?.mapNotNull { runCatching { HubTab.valueOf(it) }.getOrNull() }
             ?.takeIf { it.isNotEmpty() && it.size < HubTab.entries.size }
             ?: DEFAULT_PINNED_TABS
+        prefsLoaded = true
+
+        // Auto-login: when credentials were stored by a previous session, reconnect right away
+        // instead of showing the pre-filled login form. Guarded by vm.autoLoginAttempted so a
+        // rotation doesn't retrigger it, while a fresh app start does.
+        val url = normalizeServerUrl(serverUrl)
+        val httpAllowed = allowInsecureHttp || !url.startsWith("http://")
+        if (!vm.isConnected && !vm.autoLoginAttempted &&
+            url.isNotEmpty() && username.isNotEmpty() && password.isNotEmpty() && httpAllowed
+        ) {
+            vm.autoLoginAttempted = true
+            autoLoginStarted = true
+            if (url != serverUrl) serverUrl = url
+            vm.connect(url, username, password) { /* credentials already stored */ }
+        }
     }
     val s = stringsFor(language)
 
@@ -258,6 +278,9 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding).background(MaterialTheme.colorScheme.background)) {
             if (!vm.isConnected) {
+                if (!prefsLoaded || (autoLoginStarted && vm.isLoading)) {
+                    AutoConnectSplash()
+                } else {
                 LoginScreen(serverUrl = serverUrl, username = username, password = password, isLoading = vm.isLoading, allowInsecureHttp = allowInsecureHttp,
                     language = language, onLanguageChange = { language = it; sharedPrefs.edit().putString("language", it.name).apply() },
                     onServerUrlChange = { serverUrl = it }, onUsernameChange = { username = it }, onPasswordChange = { password = it }, onAllowInsecureHttpChange = { allowInsecureHttp = it },
@@ -272,6 +295,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                             sharedPrefs.edit().putString("server_url", url).putString("username", username).putString("password", password).putBoolean("allow_insecure_http", allowInsecureHttp).apply()
                         }
                     })
+                }
             } else {
                 PullToRefreshBox(isRefreshing = vm.isLoading, onRefresh = { vm.refreshData() }, modifier = Modifier.fillMaxSize()) {
                     when (vm.currentTab) {
@@ -560,6 +584,25 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
             }
         }
     }
+    }
+}
+
+// Branded loading screen shown while reconnecting automatically with the stored credentials,
+// so the pre-filled login form doesn't flash for a second on app start.
+@Composable
+private fun AutoConnectSplash() {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            "Nextcloud Extended",
+            style = MaterialTheme.typography.displaySmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 32.dp)
+        )
+        CircularProgressIndicator()
     }
 }
 
