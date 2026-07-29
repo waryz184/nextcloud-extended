@@ -61,6 +61,13 @@ class NextcloudViewModel : ViewModel() {
 
     private fun msg(e: Exception?): String = e?.message ?: ""
 
+    // A 404 from the Notes API almost always means the Notes app is not installed or disabled
+    // on the server — surface a targeted hint instead of the raw HTTP error.
+    private fun notesFailure(err: Exception?, fallback: (String) -> String): String {
+        val m = msg(err)
+        return if (m.contains("404")) s.notesNotInstalled else fallback(m)
+    }
+
     // Single guarded decrement so a stray double-callback can never drive the spinner negative.
     private fun endLoad() { if (loadingCount > 0) loadingCount-- }
 
@@ -144,7 +151,7 @@ class NextcloudViewModel : ViewModel() {
                         notes = list.sortedWith(compareByDescending<NextcloudNote> { it.favorite }.thenByDescending { it.modified })
                         endLoad()
                     },
-                    onFailure = { err -> errorMessage = s.notesError(msg(err)); endLoad() }
+                    onFailure = { err -> errorMessage = notesFailure(err, s.notesError); endLoad() }
                 )
             }
             HubTab.FILES -> {
@@ -312,7 +319,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.updateNote(note.id, note.title, note.content, note.category, !note.favorite,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.noteFavFailed(msg(err)); endLoad() }
+            onFailure = { err -> errorMessage = notesFailure(err, s.noteFavFailed); endLoad() }
         )
     }
 
@@ -320,7 +327,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.createNote(title, content, category,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.noteCreateFailed(msg(err)); endLoad() }
+            onFailure = { err -> errorMessage = notesFailure(err, s.noteCreateFailed); endLoad() }
         )
     }
 
@@ -328,7 +335,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.updateNote(note.id, title, content, category, note.favorite,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.noteUpdateFailed(msg(err)); endLoad() }
+            onFailure = { err -> errorMessage = notesFailure(err, s.noteUpdateFailed); endLoad() }
         )
     }
 
@@ -336,7 +343,7 @@ class NextcloudViewModel : ViewModel() {
         loadingCount++
         client?.deleteNote(noteId,
             onSuccess = { refreshAndStop() },
-            onFailure = { err -> errorMessage = s.noteDeleteFailed(msg(err)); endLoad() }
+            onFailure = { err -> errorMessage = notesFailure(err, s.noteDeleteFailed); endLoad() }
         )
     }
 
