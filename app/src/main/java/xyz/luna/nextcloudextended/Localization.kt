@@ -83,6 +83,7 @@ class Strings(
     val moreOptions: String,
     val sizeMb: String,
     val sizeKb: String,
+    val download: String,
     val downloadStarted: (String) -> String,
     // Tasks
     val newTask: String,
@@ -276,6 +277,7 @@ val EnStrings = Strings(
     moreOptions = "More options",
     sizeMb = "%.1f MB",
     sizeKb = "%.1f KB",
+    download = "Download",
     downloadStarted = { "Download of $it started" },
     newTask = "New task",
     editTaskTitle = "Edit task",
@@ -461,6 +463,7 @@ val FrStrings = Strings(
     moreOptions = "Plus d'options",
     sizeMb = "%.1f Mo",
     sizeKb = "%.1f Ko",
+    download = "Télécharger",
     downloadStarted = { "Téléchargement de $it démarré" },
     newTask = "Nouvelle tâche",
     editTaskTitle = "Modifier la tâche",

@@ -178,6 +178,18 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         }
     }
 
+    // Enqueues a file for download to the device's Downloads folder via the system
+    // DownloadManager (notification shown on completion). Used both when tapping a file that
+    // has no in-app viewer and for the explicit "Download" action in the file menu.
+    fun enqueueFileDownload(file: NextcloudFile) {
+        val fileUrl = vm.client?.buildFileUrl(file.path); val auth = vm.client?.getAuthorizationHeader()
+        if (fileUrl != null && auth != null) {
+            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+            dm.enqueue(android.app.DownloadManager.Request(Uri.parse(fileUrl)).addRequestHeader("Authorization", auth).setDestinationInExternalFilesDir(context, android.os.Environment.DIRECTORY_DOWNLOADS, file.name).setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED).setTitle(file.name).setDescription("Nextcloud Extended"))
+            coroutineScope.launch { snackbarHostState.showSnackbar(s.downloadStarted(file.name)) }
+        }
+    }
+
     LaunchedEffect(vm.currentTab, vm.isConnected) {
         if (vm.isConnected && vm.currentTab == HubTab.FILES && vm.currentFolderPath.isEmpty() && username.isNotEmpty())
             vm.currentFolderPath = "/remote.php/dav/files/$username/"
@@ -327,12 +339,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                                         }
                                     }
                                     else -> {
-                                        val fileUrl = vm.client?.buildFileUrl(file.path); val auth = vm.client?.getAuthorizationHeader()
-                                        if (fileUrl != null && auth != null) {
-                                            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
-                                            dm.enqueue(android.app.DownloadManager.Request(Uri.parse(fileUrl)).addRequestHeader("Authorization", auth).setDestinationInExternalFilesDir(context, android.os.Environment.DIRECTORY_DOWNLOADS, file.name).setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED).setTitle(file.name).setDescription("Nextcloud Extended"))
-                                            coroutineScope.launch { snackbarHostState.showSnackbar(s.downloadStarted(file.name)) }
-                                        }
+                                        enqueueFileDownload(file)
                                     }
                                 }
                             },
@@ -363,6 +370,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                                 }
                             },
                             onShareFile = { vm.createShareLink(it) },
+                            onDownloadFile = { file -> enqueueFileDownload(file) },
                             onBackClick = { vm.navigateUp() }, onDeleteFile = { vm.deleteFile(it.path) }, onRenameFile = { fileToRename = it; showRenameFileDialog = true }
                         )
                     }

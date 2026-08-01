@@ -23,6 +23,7 @@ fun FilesScreen(
     onFileClick: (NextcloudFile) -> Unit,
     onOpenFile: (NextcloudFile) -> Unit,
     onShareFile: (NextcloudFile) -> Unit,
+    onDownloadFile: (NextcloudFile) -> Unit,
     onBackClick: () -> Unit,
     onDeleteFile: (NextcloudFile) -> Unit,
     onRenameFile: (NextcloudFile) -> Unit
@@ -74,6 +75,7 @@ fun FilesScreen(
                         onClick = { onFileClick(file) },
                         onOpen = { onOpenFile(file) },
                         onShare = { onShareFile(file) },
+                        onDownload = { onDownloadFile(file) },
                         onRename = { onRenameFile(file) },
                         onDelete = { onDeleteFile(file) }
                     )
@@ -89,6 +91,7 @@ fun FileItem(
     onClick: () -> Unit,
     onOpen: () -> Unit,
     onShare: () -> Unit,
+    onDownload: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -138,6 +141,11 @@ fun FileItem(
                             text = { Text(s.share) },
                             leadingIcon = { Icon(Icons.Default.Share, null, tint = MaterialTheme.colorScheme.secondary) },
                             onClick = { menuExpanded = false; onShare() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(s.download) },
+                            leadingIcon = { Icon(Icons.Default.Download, null, tint = MaterialTheme.colorScheme.primary) },
+                            onClick = { menuExpanded = false; onDownload() }
                         )
                     }
                     DropdownMenuItem(
