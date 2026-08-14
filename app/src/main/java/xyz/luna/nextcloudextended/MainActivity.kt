@@ -191,8 +191,10 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     }
 
     LaunchedEffect(vm.currentTab, vm.isConnected) {
-        if (vm.isConnected && vm.currentTab == HubTab.FILES && vm.currentFolderPath.isEmpty() && username.isNotEmpty())
+        if (vm.isConnected && vm.currentTab == HubTab.FILES && vm.currentFolderPath.isEmpty() && username.isNotEmpty()) {
             vm.currentFolderPath = "/remote.php/dav/files/$username/"
+            vm.refreshData()
+        }
     }
 
     CompositionLocalProvider(LocalStrings provides s) {

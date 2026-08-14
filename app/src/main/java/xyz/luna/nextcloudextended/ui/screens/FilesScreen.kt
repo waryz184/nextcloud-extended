@@ -37,19 +37,18 @@ fun FilesScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        // Navigation header
-        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            val decoded = remember(currentFolderPath) {
-                try { java.net.URLDecoder.decode(currentFolderPath, "UTF-8") } catch (e: Exception) { currentFolderPath }
-            }
-            if (decoded.count { it == '/' } > 5) {
+        val decoded = remember(currentFolderPath) {
+            try { java.net.URLDecoder.decode(currentFolderPath, "UTF-8") } catch (e: Exception) { currentFolderPath }
+        }
+        val isSubfolder = decoded.count { it == '/' } > 5
+
+        // Only show a navigation header inside a folder. The root title is already in the app bar.
+        if (isSubfolder) {
+            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBackClick) { Icon(Icons.Default.ArrowBack, s.back) }
+                val folderName = remember(decoded) { decoded.trimEnd('/').substringAfterLast('/') }
+                Text(folderName, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             }
-            val folderName = remember(decoded) {
-                val parts = decoded.trimEnd('/').split('/')
-                if (parts.size <= 5) s.driveRoot else parts.last()
-            }
-            Text(folderName, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
         }
 
         // Search
