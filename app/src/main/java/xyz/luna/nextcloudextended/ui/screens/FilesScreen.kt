@@ -42,16 +42,7 @@ fun FilesScreen(
         }
         val isSubfolder = decoded.count { it == '/' } > 5
 
-        // Only show a navigation header inside a folder. The root title is already in the app bar.
-        if (isSubfolder) {
-            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBackClick) { Icon(Icons.Default.ArrowBack, s.back) }
-                val folderName = remember(decoded) { decoded.trimEnd('/').substringAfterLast('/') }
-                Text(folderName, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            }
-        }
-
-        // Search
+        // Keep the search field outside the scrolling file list.
         OutlinedTextField(
             value = searchQuery, onValueChange = { searchQuery = it },
             placeholder = { Text(s.searchInFolder) },
@@ -60,6 +51,15 @@ fun FilesScreen(
             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
             singleLine = true, shape = RoundedCornerShape(12.dp)
         )
+
+        // The current folder hierarchy belongs below the fixed search field.
+        if (isSubfolder) {
+            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBackClick) { Icon(Icons.Default.ArrowBack, s.back) }
+                val folderName = remember(decoded) { decoded.trimEnd('/').substringAfterLast('/') }
+                Text(folderName, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            }
+        }
 
         if (filteredFiles.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
