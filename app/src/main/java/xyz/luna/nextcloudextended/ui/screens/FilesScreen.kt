@@ -1,6 +1,7 @@
 package xyz.luna.nextcloudextended.ui.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import xyz.luna.nextcloudextended.LocalStrings
@@ -42,23 +44,58 @@ fun FilesScreen(
         }
         val isSubfolder = decoded.count { it == '/' } > 5
 
-        // Keep the search field outside the scrolling file list.
-        OutlinedTextField(
-            value = searchQuery, onValueChange = { searchQuery = it },
-            placeholder = { Text(s.searchInFolder) },
-            leadingIcon = { Icon(Icons.Default.Search, null) },
-            trailingIcon = { if (searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Clear, null) } },
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-            singleLine = true, shape = RoundedCornerShape(12.dp)
-        )
-
-        // The current folder hierarchy belongs below the fixed search field.
         if (isSubfolder) {
-            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBackClick) { Icon(Icons.Default.ArrowBack, s.back) }
-                val folderName = remember(decoded) { decoded.trimEnd('/').substringAfterLast('/') }
-                Text(folderName, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            // Keep the back action and search field in one control for nested folders.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+                    .height(56.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp)),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(64.dp)
+                        .clickable(onClick = onBackClick),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.ArrowBack, s.back)
+                }
+                VerticalDivider(modifier = Modifier.height(32.dp))
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text(s.searchInFolder) },
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Clear, null) }
+                        }
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(0.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+                        focusedBorderColor = androidx.compose.ui.graphics.Color.Transparent
+                    )
+                )
             }
+        } else {
+            // At the Drive root, the search field remains full width.
+            OutlinedTextField(
+                value = searchQuery, onValueChange = { searchQuery = it },
+                placeholder = { Text(s.searchInFolder) },
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = { if (searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Clear, null) } },
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                singleLine = true, shape = RoundedCornerShape(12.dp)
+            )
         }
 
         if (filteredFiles.isEmpty()) {
