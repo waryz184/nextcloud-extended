@@ -1,19 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  SECURITY NOTE (reviewed, intentionally left permissive):
-  cleartextTrafficPermitted="true" allows plain HTTP for ALL domains, so self-hosted
-  Nextcloud instances reachable only over http keep working. The app-level guard in
-  MainActivity (the "allow insecure HTTP" switch) blocks an http:// server URL in the UI,
-  but the network layer itself still permits cleartext — a hostile network could therefore
-  downgrade/observe traffic. trust-anchors also include user-added CAs to support custom
-  certificate authorities. If HTTPS-only enforcement is ever required, set
-  cleartextTrafficPermitted="false" and drop the <certificates src="user" /> anchor.
--->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true">
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
-            <certificates src="user" />
         </trust-anchors>
     </base-config>
 </network-security-config>

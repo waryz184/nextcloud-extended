@@ -15,6 +15,10 @@ internal fun encodePath(path: String): String =
         else URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
     }
 
+// WebDAV rename and folder creation accept a single resource name, never a relative path.
+internal fun isValidDavName(name: String): Boolean =
+    name.isNotBlank() && name != "." && name != ".." && '/' !in name && '\\' !in name
+
 // Escapes a value for inclusion in a WebDAV/CalDAV XML body (e.g. <d:displayname>).
 // Without this, a list named "R&D" or "A < B" produces malformed XML and the request fails.
 internal fun escapeXml(s: String): String =

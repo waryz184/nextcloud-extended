@@ -1,19 +1,10 @@
 package xyz.luna.nextcloudextended.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -28,13 +19,11 @@ fun LoginScreen(
     username: String,
     password: String,
     isLoading: Boolean,
-    allowInsecureHttp: Boolean,
     language: AppLanguage,
     onLanguageChange: (AppLanguage) -> Unit,
     onServerUrlChange: (String) -> Unit,
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
-    onAllowInsecureHttpChange: (Boolean) -> Unit,
     onConnect: () -> Unit
 ) {
     val s = LocalStrings.current
@@ -91,37 +80,6 @@ fun LoginScreen(
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
             singleLine = true
         )
-
-        // Advanced options (collapsed by default)
-        var advancedExpanded by remember { mutableStateOf(allowInsecureHttp) }
-        Row(
-            modifier = Modifier.fillMaxWidth().clickable { advancedExpanded = !advancedExpanded }.padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(s.advancedOptions, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Icon(
-                imageVector = if (advancedExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        AnimatedVisibility(visible = advancedExpanded) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(s.allowInsecureHttp, style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        s.insecureHttpWarning,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Switch(checked = allowInsecureHttp, onCheckedChange = onAllowInsecureHttpChange)
-            }
-        }
 
         Spacer(Modifier.height(16.dp))
 

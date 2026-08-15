@@ -27,6 +27,14 @@ class SerializationTest {
         assertEquals("/files/a%2Bb.txt", encodePath("/files/a+b.txt"))
     }
 
+    @Test fun davName_rejectsPathTraversalAndSeparators() {
+        assertEquals(true, isValidDavName("report.pdf"))
+        assertEquals(false, isValidDavName("../report.pdf"))
+        assertEquals(false, isValidDavName("nested/report.pdf"))
+        assertEquals(false, isValidDavName("nested\\report.pdf"))
+        assertEquals(false, isValidDavName(".."))
+    }
+
     // ── ICS text escaping ───────────────────────────────────────────────────────
 
     @Test fun icsText_escapesSpecialChars() {

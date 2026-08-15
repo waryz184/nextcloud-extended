@@ -26,6 +26,8 @@ class NextcloudViewModel : ViewModel() {
 
     var loadingCount by mutableIntStateOf(0)
     val isLoading get() = loadingCount > 0
+    private var sessionGeneration = 0
+    private var filesRequestGeneration = 0
 
     // Selected UI language — kept in sync by the UI; drives error-message localization.
     var language by mutableStateOf(AppLanguage.EN)
@@ -74,6 +76,7 @@ class NextcloudViewModel : ViewModel() {
     // Cancel any in-flight HTTP calls when the ViewModel is destroyed (process death, etc.)
     // so their callbacks don't fire against a dead scope.
     override fun onCleared() {
+        sessionGeneration++
         client?.cancelAll()
         super.onCleared()
     }
@@ -156,12 +159,21 @@ class NextcloudViewModel : ViewModel() {
             }
             HubTab.FILES -> {
                 if (currentFolderPath.isNotEmpty()) {
-                    c.getFiles(currentFolderPath,
+                    val requestedPath = currentFolderPath
+                    val requestGeneration = ++filesRequestGeneration
+                    c.getFiles(requestedPath,
                         onSuccess = { list ->
-                            files = list.sortedWith(compareByDescending<NextcloudFile> { it.isDirectory }.thenBy { it.name.lowercase() })
+                            if (requestGeneration == filesRequestGeneration && requestedPath == currentFolderPath) {
+                                files = list.sortedWith(compareByDescending<NextcloudFile> { it.isDirectory }.thenBy { it.name.lowercase() })
+                            }
                             endLoad()
                         },
-                        onFailure = { err -> errorMessage = s.filesError(msg(err)); endLoad() }
+                        onFailure = { err ->
+                            if (requestGeneration == filesRequestGeneration && requestedPath == currentFolderPath) {
+                                errorMessage = s.filesError(msg(err))
+                            }
+                            endLoad()
+                        }
                     )
                 } else { endLoad() }
             }
@@ -185,11 +197,14 @@ class NextcloudViewModel : ViewModel() {
     private fun refreshAndStop() { refreshData(); endLoad() }
 
     fun connect(serverUrl: String, username: String, password: String, onSaveCredentials: () -> Unit) {
+        val generation = ++sessionGeneration
+        client?.cancelAll()
         loadingCount++
         val c = CalDavClient(serverUrl, username, password)
         client = c
         c.getAllCalendarData(
             onSuccess = { eventCals, taskListData ->
+                if (generation != sessionGeneration || client !== c) return@getAllCalendarData
                 onSaveCredentials()
                 calendarInfos = eventCals
                 activeCalendarHrefs = eventCals.map { it.href }.toSet()
@@ -204,6 +219,7 @@ class NextcloudViewModel : ViewModel() {
                 refreshData()
             },
             onFailure = { err ->
+                if (generation != sessionGeneration || client !== c) return@getAllCalendarData
                 errorMessage = s.connectionFailed(msg(err))
                 endLoad()
             }
@@ -211,6 +227,8 @@ class NextcloudViewModel : ViewModel() {
     }
 
     fun disconnect(onClearPrefs: () -> Unit) {
+        sessionGeneration++
+        filesRequestGeneration++
         client?.cancelAll()
         onClearPrefs()
         isConnected = false; client = null
@@ -219,6 +237,7 @@ class NextcloudViewModel : ViewModel() {
         notes = emptyList(); files = emptyList()
         currentFolderPath = ""; selectedTaskListHref = ""; selectedTaskListName = ""
         addressBooks = emptyList(); contacts = emptyList(); selectedAddressBookHref = ""; selectedAddressBookName = ""
+        loadingCount = 0
     }
 
     fun loadTaskList(href: String, name: String) {
@@ -347,12 +366,17 @@ class NextcloudViewModel : ViewModel() {
         )
     }
 
-    fun navigateToFolder(path: String) { currentFolderPath = path; refreshData() }
+    fun navigateToFolder(path: String) {
+        filesRequestGeneration++
+        currentFolderPath = path
+        refreshData()
+    }
 
     fun navigateUp() {
         val decoded = try { java.net.URLDecoder.decode(currentFolderPath, "UTF-8") } catch (e: Exception) { currentFolderPath }
         val parts = decoded.trimEnd('/').split('/')
         if (parts.size > 5) {
+            filesRequestGeneration++
             currentFolderPath = parts.take(parts.size - 1).joinToString("/") + "/"
             refreshData()
         }

@@ -105,7 +105,7 @@ fun FilesScreen(
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
-                items(filteredFiles) { file ->
+                items(filteredFiles, key = { it.path }) { file ->
                     FileItem(
                         file = file,
                         onClick = { onFileClick(file) },

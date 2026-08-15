@@ -35,7 +35,9 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import xyz.luna.nextcloudextended.data.model.CalendarEvent
 import xyz.luna.nextcloudextended.data.model.NextcloudContact
 import xyz.luna.nextcloudextended.data.model.NextcloudFile
@@ -44,6 +46,7 @@ import xyz.luna.nextcloudextended.data.model.NextcloudTask
 import xyz.luna.nextcloudextended.ui.screens.*
 import xyz.luna.nextcloudextended.ui.theme.NextcloudExtendedTheme
 import java.io.File
+import java.io.ByteArrayOutputStream
 import java.util.Locale
 import java.util.UUID
 
@@ -71,6 +74,18 @@ fun HubTab.label(s: Strings): String = when (this) {
 
 private val officeExtensions = setOf("xlsx", "xls", "docx", "pptx", "csv")
 private data class OfficeViewData(val fileName: String, val bytes: ByteArray?, val filePath: String)
+private const val MAX_IN_MEMORY_FILE_BYTES = 25 * 1024 * 1024
+
+private fun java.io.InputStream.readUpTo(maxBytes: Int): ByteArray {
+    val output = ByteArrayOutputStream()
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    while (true) {
+        val count = read(buffer)
+        if (count < 0) return output.toByteArray()
+        if (output.size() + count > maxBytes) throw IllegalArgumentException("File exceeds the 25 MB in-app limit")
+        output.write(buffer, 0, count)
+    }
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,7 +108,6 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     var serverUrl by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var allowInsecureHttp by remember { mutableStateOf(false) }
     // Language: stored preference, else device locale (FR for French devices, EN otherwise)
     var language by remember {
         mutableStateOf(
@@ -111,7 +125,6 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         serverUrl = sharedPrefs.getString("server_url", "") ?: ""
         username = sharedPrefs.getString("username", "") ?: ""
         password = sharedPrefs.getString("password", "") ?: ""
-        allowInsecureHttp = sharedPrefs.getBoolean("allow_insecure_http", false)
         vm.officeViewerPref = sharedPrefs.getString("office_viewer_pref", null)
             ?.let { runCatching { OfficeViewerType.valueOf(it) }.getOrNull() }
             ?: OfficeViewerType.POI
@@ -125,9 +138,8 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         // instead of showing the pre-filled login form. Guarded by vm.autoLoginAttempted so a
         // rotation doesn't retrigger it, while a fresh app start does.
         val url = normalizeServerUrl(serverUrl)
-        val httpAllowed = allowInsecureHttp || !url.startsWith("http://")
         if (!vm.isConnected && !vm.autoLoginAttempted &&
-            url.isNotEmpty() && username.isNotEmpty() && password.isNotEmpty() && httpAllowed
+            url.startsWith("https://", ignoreCase = true) && username.isNotEmpty() && password.isNotEmpty()
         ) {
             vm.autoLoginAttempted = true
             autoLoginStarted = true
@@ -170,11 +182,15 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
 
     val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
-            try {
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                val fileName = getFileNameFromUri(context, uri) ?: "upload_${System.currentTimeMillis()}"
-                if (bytes != null) vm.uploadFile(fileName, bytes)
-            } catch (e: Exception) { vm.errorMessage = s.fileReadError(e.message ?: "") }
+            coroutineScope.launch {
+                try {
+                    val bytes = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { it.readUpTo(MAX_IN_MEMORY_FILE_BYTES) }
+                    }
+                    val fileName = getFileNameFromUri(context, uri) ?: "upload_${System.currentTimeMillis()}"
+                    if (bytes != null) vm.uploadFile(fileName, bytes)
+                } catch (e: Exception) { vm.errorMessage = s.fileReadError(e.message ?: "") }
+            }
         }
     }
 
@@ -295,18 +311,18 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
                 if (!prefsLoaded || (autoLoginStarted && vm.isLoading)) {
                     AutoConnectSplash()
                 } else {
-                LoginScreen(serverUrl = serverUrl, username = username, password = password, isLoading = vm.isLoading, allowInsecureHttp = allowInsecureHttp,
+                LoginScreen(serverUrl = serverUrl, username = username, password = password, isLoading = vm.isLoading,
                     language = language, onLanguageChange = { language = it; sharedPrefs.edit().putString("language", it.name).apply() },
-                    onServerUrlChange = { serverUrl = it }, onUsernameChange = { username = it }, onPasswordChange = { password = it }, onAllowInsecureHttpChange = { allowInsecureHttp = it },
+                    onServerUrlChange = { serverUrl = it }, onUsernameChange = { username = it }, onPasswordChange = { password = it },
                     onConnect = {
                         // Trim + default to https:// when the user omits the scheme, so OkHttp doesn't
                         // reject a bare host like "cloud.example.com".
                         val url = normalizeServerUrl(serverUrl)
                         if (url != serverUrl) serverUrl = url
                         if (url.isEmpty() || username.isEmpty() || password.isEmpty()) { vm.errorMessage = s.fillAllFields; return@LoginScreen }
-                        if (url.startsWith("http://") && !allowInsecureHttp) { vm.errorMessage = s.insecureHttpBlocked; return@LoginScreen }
+                        if (!url.startsWith("https://", ignoreCase = true)) { vm.errorMessage = s.insecureHttpBlocked; return@LoginScreen }
                         vm.connect(url, username, password) {
-                            sharedPrefs.edit().putString("server_url", url).putString("username", username).putString("password", password).putBoolean("allow_insecure_http", allowInsecureHttp).apply()
+                            sharedPrefs.edit().putString("server_url", url).putString("username", username).putString("password", password).remove("allow_insecure_http").apply()
                         }
                     })
                 }
