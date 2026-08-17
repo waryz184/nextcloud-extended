@@ -166,6 +166,11 @@ class Strings(
     val navBarHint: String,
     val navBarShownInBar: String,
     val navBarInMoreMenu: String,
+    // Contacts sync settings section
+    val contactsSyncSection: String,
+    val contactsSyncSectionDesc: String,
+    val syncAccountStatus: String,
+    val syncNow: String,
     // Office Viewer
     val documentError: String,
     val collaboraLoadFailed: String,
@@ -206,6 +211,19 @@ class Strings(
     val typeWork: String,
     val typeFax: String,
     val typeOther: String,
+    // System account + contacts sync
+    val accountSetupTitle: String,
+    val accountSetupSubtitle: String,
+    val selectAddressBook: String,
+    val noAddressBookAvailable: String,
+    val createAccount: String,
+    val accountCreated: String,
+    val accountSetupFailed: (String) -> String,
+    val syncContacts: String,
+    val addSystemAccount: String,
+    val removeSystemAccount: String,
+    val systemAccountPresent: String,
+    val syncAccountEnabledHint: String,
 )
 
 val EnStrings = Strings(
@@ -351,6 +369,10 @@ val EnStrings = Strings(
     navBarHint = "Select 1 to 4 tabs to pin in the main bar. The others are grouped under the + button.",
     navBarShownInBar = "Shown in the main bar",
     navBarInMoreMenu = "In the + menu",
+    contactsSyncSection = "Contacts sync",
+    contactsSyncSectionDesc = "Link your Nextcloud account to the phone's Contacts app",
+    syncAccountStatus = "Account linked",
+    syncNow = "Sync now",
     documentError = "Cannot open this document",
     collaboraLoadFailed = "Collabora / OnlyOffice is not available on this server",
     tabContacts = "Contacts",
@@ -389,6 +411,18 @@ val EnStrings = Strings(
     typeWork = "Work",
     typeFax = "Fax",
     typeOther = "Other",
+    accountSetupTitle = "Add Nextcloud account",
+    accountSetupSubtitle = "Sign in to sync your Nextcloud contacts with the phone's Contacts app",
+    selectAddressBook = "Select an address book to sync",
+    noAddressBookAvailable = "No address book found on this server",
+    createAccount = "Create account",
+    accountCreated = "Account created",
+    accountSetupFailed = { "Could not verify the connection: $it" },
+    syncContacts = "Contacts sync",
+    addSystemAccount = "Add system account",
+    removeSystemAccount = "Remove system account",
+    systemAccountPresent = "A system account is already linked",
+    syncAccountEnabledHint = "Sync is configured for this account",
 )
 
 val FrStrings = Strings(
@@ -534,6 +568,10 @@ val FrStrings = Strings(
     navBarHint = "Sélectionnez 1 à 4 onglets à épingler dans la barre principale. Les autres sont regroupés sous le bouton +.",
     navBarShownInBar = "Affiché dans la barre principale",
     navBarInMoreMenu = "Dans le menu +",
+    contactsSyncSection = "Synchronisation des contacts",
+    contactsSyncSectionDesc = "Associez votre compte Nextcloud à l'application Contacts du téléphone",
+    syncAccountStatus = "Compte associé",
+    syncNow = "Synchroniser maintenant",
     documentError = "Impossible d'ouvrir ce document",
     collaboraLoadFailed = "Collabora / OnlyOffice n'est pas disponible sur ce serveur",
     tabContacts = "Contacts",
@@ -572,6 +610,18 @@ val FrStrings = Strings(
     typeWork = "Travail",
     typeFax = "Fax",
     typeOther = "Autre",
+    accountSetupTitle = "Ajouter un compte Nextcloud",
+    accountSetupSubtitle = "Connectez-vous pour synchroniser vos contacts Nextcloud avec l'application Contacts du téléphone",
+    selectAddressBook = "Choisissez un carnet d'adresses à synchroniser",
+    noAddressBookAvailable = "Aucun carnet d'adresses trouvé sur ce serveur",
+    createAccount = "Créer le compte",
+    accountCreated = "Compte créé",
+    accountSetupFailed = { "Impossible de vérifier la connexion : $it" },
+    syncContacts = "Synchronisation des contacts",
+    addSystemAccount = "Ajouter un compte système",
+    removeSystemAccount = "Supprimer le compte système",
+    systemAccountPresent = "Un compte système est déjà associé",
+    syncAccountEnabledHint = "La synchronisation est configurée pour ce compte",
 )
 
 fun stringsFor(language: AppLanguage): Strings = when (language) {

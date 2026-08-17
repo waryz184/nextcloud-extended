@@ -1,5 +1,8 @@
 package xyz.luna.nextcloudextended.ui.screens
 
+import android.content.ContentResolver
+import android.content.Intent
+import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -8,8 +11,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -17,17 +24,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import xyz.luna.nextcloudextended.HubTab
 import xyz.luna.nextcloudextended.LocalStrings
 import xyz.luna.nextcloudextended.OfficeViewerType
+import xyz.luna.nextcloudextended.account.NextcloudAccountManager
+import xyz.luna.nextcloudextended.account.NextcloudAccounts
 import xyz.luna.nextcloudextended.icon
 import xyz.luna.nextcloudextended.label
 
 private const val MIN_PINNED_TABS = 1
 private const val MAX_PINNED_TABS = 4
 
-private enum class SettingsCategory { OFFICE_VIEWER, NAVIGATION_BAR }
+private enum class SettingsCategory { OFFICE_VIEWER, NAVIGATION_BAR, CONTACTS_SYNC }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +62,7 @@ fun SettingsScreen(
                             null -> s.settings
                             SettingsCategory.OFFICE_VIEWER -> s.officeViewerSection
                             SettingsCategory.NAVIGATION_BAR -> s.navBarSection
+                            SettingsCategory.CONTACTS_SYNC -> s.contactsSyncSection
                         }
                     )
                 },
@@ -84,6 +95,9 @@ fun SettingsScreen(
                 pinnedTabs = pinnedTabs,
                 onPinnedTabsChange = onPinnedTabsChange
             )
+            SettingsCategory.CONTACTS_SYNC -> ContactsSyncSettings(
+                modifier = Modifier.padding(padding)
+            )
         }
     }
 }
@@ -106,6 +120,12 @@ private fun SettingsRoot(
             title = s.navBarSection,
             subtitle = s.navBarSectionDesc,
             onClick = { onCategoryClick(SettingsCategory.NAVIGATION_BAR) }
+        )
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        SettingsCategoryRow(
+            title = s.contactsSyncSection,
+            subtitle = s.contactsSyncSectionDesc,
+            onClick = { onCategoryClick(SettingsCategory.CONTACTS_SYNC) }
         )
     }
 }
@@ -219,6 +239,109 @@ private fun NavigationBarSettings(
                     )
                 }
                 Checkbox(checked = isPinned, onCheckedChange = null, enabled = canToggle)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContactsSyncSettings(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val s = LocalStrings.current
+    val am = remember { NextcloudAccountManager(context) }
+    var hasAccount by remember { mutableStateOf(am.firstAccount() != null) }
+
+    // Refresh on every composition
+    LaunchedEffect(Unit) {
+        hasAccount = am.firstAccount() != null
+    }
+
+    Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Text(
+            s.contactsSyncSectionDesc,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(16.dp)
+        )
+
+        if (hasAccount) {
+            val account = am.firstAccount()!!
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Person, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(s.syncAccountStatus, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        account.name,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+            // Sync now button
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        val a = am.firstAccount() ?: return@clickable
+                        val bundle = Bundle().apply {
+                            putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true)
+                            putBoolean(ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
+                        }
+                        ContentResolver.requestSync(a, NextcloudAccounts.CONTACTS_AUTHORITY, bundle)
+                    }
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Sync, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(12.dp))
+                Text(s.syncNow, style = MaterialTheme.typography.bodyLarge)
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+
+            // Remove account
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        am.firstAccount()?.let { am.removeAccount(it) }
+                        hasAccount = false
+                    }
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.PersonOff, null, tint = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    s.removeSystemAccount,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        } else {
+            // Show "Add system account" button
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        val intent = Intent(context, xyz.luna.nextcloudextended.sync.AccountSetupActivity::class.java)
+                        context.startActivity(intent)
+                    }
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Person, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(12.dp))
+                Text(s.addSystemAccount, style = MaterialTheme.typography.bodyLarge)
             }
         }
     }

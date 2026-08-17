@@ -29,5 +29,6 @@ data class NextcloudContact(
     val categories: List<String> = emptyList(),  // Nextcloud contact groups
     val addressBookHref: String,
     val href: String = "",                   // full path to the .vcf on the server ("" for a new contact)
+    val etag: String = "",                   // server ETag, used by the sync adapter
     val rawVcard: String? = null             // unfolded source vCard, so unmanaged properties survive an edit
 )

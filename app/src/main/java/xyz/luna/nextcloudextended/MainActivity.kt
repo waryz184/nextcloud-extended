@@ -43,6 +43,9 @@ import xyz.luna.nextcloudextended.data.model.NextcloudContact
 import xyz.luna.nextcloudextended.data.model.NextcloudFile
 import xyz.luna.nextcloudextended.data.model.NextcloudNote
 import xyz.luna.nextcloudextended.data.model.NextcloudTask
+import xyz.luna.nextcloudextended.account.NextcloudAccountManager
+import xyz.luna.nextcloudextended.account.NextcloudAccounts
+import xyz.luna.nextcloudextended.sync.AccountSetupActivity
 import xyz.luna.nextcloudextended.ui.screens.*
 import xyz.luna.nextcloudextended.ui.theme.NextcloudExtendedTheme
 import java.io.File
@@ -206,10 +209,28 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         }
     }
 
-    LaunchedEffect(vm.currentTab, vm.isConnected) {
+LaunchedEffect(vm.currentTab, vm.isConnected) {
         if (vm.isConnected && vm.currentTab == HubTab.FILES && vm.currentFolderPath.isEmpty() && username.isNotEmpty()) {
             vm.currentFolderPath = "/remote.php/dav/files/$username/"
             vm.refreshData()
+        }
+    }
+
+    // Prompt to create a system account after first login
+    LaunchedEffect(vm.isConnected) {
+        if (vm.isConnected) {
+            val am = NextcloudAccountManager(context)
+            if (am.firstAccount() == null) {
+                val result = snackbarHostState.showSnackbar(
+                    message = "Sync contacts with the phone's Contacts app",
+                    actionLabel = "Add account",
+                    duration = SnackbarDuration.Indefinite
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    val intent = Intent(context, AccountSetupActivity::class.java)
+                    context.startActivity(intent)
+                }
+            }
         }
     }
 

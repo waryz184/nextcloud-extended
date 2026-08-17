@@ -771,6 +771,89 @@ class CalDavClient(
         })
     }
 
+    // ── Synchronous CardDAV for the background sync adapter ──────────────────────
+    // These block on the caller's thread (the SyncAdapter thread) and do not hop
+    // back to the main thread.
+
+    fun getAddressBooksSync(): List<Pair<String, String>> {
+        val url = "$baseUrl${encodePath("/remote.php/dav/addressbooks/users/$username/")}"
+        val propfindBody = """<?xml version="1.0" encoding="utf-8" ?>
+<d:propfind xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+  <d:prop>
+    <d:displayname />
+    <d:resourcetype />
+  </d:prop>
+</d:propfind>""".trimIndent()
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", credentials)
+            .addHeader("Depth", "1")
+            .addHeader("Content-Type", "application/xml; charset=utf-8")
+            .method("PROPFIND", propfindBody.toRequestBody("application/xml".toMediaType()))
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("HTTP Error: ${response.code}")
+            return parseAddressBooks(response.body?.string() ?: "")
+        }
+    }
+
+    fun getContactsSync(addressBookHref: String): List<NextcloudContact> {
+        val reportBody = """<?xml version="1.0" encoding="utf-8" ?>
+<card:addressbook-query xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+  <d:prop>
+    <d:getetag />
+    <card:address-data />
+  </d:prop>
+</card:addressbook-query>""".trimIndent()
+        val request = Request.Builder()
+            .url("$baseUrl${encodePath(addressBookHref)}")
+            .addHeader("Authorization", credentials)
+            .addHeader("Depth", "1")
+            .addHeader("Content-Type", "application/xml; charset=utf-8")
+            .method("REPORT", reportBody.toRequestBody("application/xml".toMediaType()))
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("HTTP Error: ${response.code}")
+            return parseContactsFromReport(response.body?.string() ?: "", addressBookHref)
+        }
+    }
+
+    /** Pushes a contact to the server. Returns the server ETag (may be empty). */
+    fun saveContactSync(contact: NextcloudContact): String {
+        val fileUrl = if (contact.href.isNotEmpty()) "$baseUrl${encodePath(contact.href)}"
+                      else {
+                          val ab = if (contact.addressBookHref.endsWith("/")) contact.addressBookHref else "${contact.addressBookHref}/"
+                          "$baseUrl${encodePath("$ab${contact.uid}.vcf")}"
+                      }
+        val request = Request.Builder()
+            .url(fileUrl)
+            .addHeader("Authorization", credentials)
+            .addHeader("Content-Type", "text/vcard; charset=utf-8")
+            .put(buildVcard(contact).toRequestBody("text/vcard; charset=utf-8".toMediaType()))
+            .build()
+        val response = client.newCall(request).execute()
+        response.use {
+            if (!response.isSuccessful && response.code != 201 && response.code != 204) {
+                throw IOException("HTTP Error: ${response.code}")
+            }
+            return response.headers["ETag"]?.removeSurrounding("\"").orEmpty()
+        }
+    }
+
+    fun deleteContactSync(contact: NextcloudContact) {
+        if (contact.href.isEmpty()) return
+        val request = Request.Builder()
+            .url("$baseUrl${encodePath(contact.href)}")
+            .addHeader("Authorization", credentials)
+            .delete()
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful && response.code != 204) {
+                throw IOException("HTTP Error: ${response.code}")
+            }
+        }
+    }
+
     // Rebuilds a vCard 3.0 from the managed fields while carrying over any property we don't model
     // (NICKNAME, URL, IMPP, X-*…) from the original card so an edit doesn't drop it.
     private fun buildVcard(contact: NextcloudContact): String {
@@ -888,6 +971,7 @@ class CalDavClient(
         val contacts = mutableListOf<NextcloudContact>()
         val responseRegex = Regex("<d:response[\\s\\S]*?</d:response>")
         val hrefRegex = Regex("<d:href>(.*?)</d:href>")
+        val etagRegex = Regex("<d:getetag>(.*?)</d:getetag>")
         val dataRegex = Regex("<[a-zA-Z0-9:]*address-data[^>]*>([\\s\\S]*?)</[a-zA-Z0-9:]*address-data>")
         for (resp in responseRegex.findAll(xml)) {
             val respStr = resp.value
@@ -897,12 +981,13 @@ class CalDavClient(
             val href = hrefRegex.find(respStr)?.groupValues?.get(1)?.let {
                 runCatching { java.net.URLDecoder.decode(it, "UTF-8") }.getOrDefault(it)
             } ?: ""
-            contacts.add(parseVcard(vcard, addressBookHref, href))
+            val etag = etagRegex.find(respStr)?.groupValues?.get(1)?.trim()?.removeSurrounding("\"") ?: ""
+            contacts.add(parseVcard(vcard, addressBookHref, href, etag))
         }
         return contacts
     }
 
-    private fun parseVcard(vcard: String, addressBookHref: String, href: String): NextcloudContact {
+    private fun parseVcard(vcard: String, addressBookHref: String, href: String, etag: String = ""): NextcloudContact {
         val unfolded = vcard.replace("\r\n ", "").replace("\r\n\t", "").replace("\n ", "").replace("\n\t", "")
         fun rawFirst(prop: String) = Regex("(?m)^$prop(?:;[^:\\r\\n]*)?:(.*)$").find(unfolded)?.groupValues?.get(1)?.trimEnd('\r')
 
@@ -939,7 +1024,7 @@ class CalDavClient(
         val categories = rawFirst("CATEGORIES")?.let { splitVcardComponents(it, ',') }?.filter { it.isNotBlank() }.orEmpty()
         val (photo, photoMime) = parsePhoto(unfolded)
 
-        return NextcloudContact(uid, fullName, phones, emails, org, addresses, birthday, photo, photoMime, categories, addressBookHref, href, unfolded)
+        return NextcloudContact(uid, fullName, phones, emails, org, addresses, birthday, photo, photoMime, categories, addressBookHref, href, etag, unfolded)
     }
 
     // Returns (paramsString, rawValue) for every line of the given vCard property.
