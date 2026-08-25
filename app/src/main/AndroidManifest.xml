@@ -54,6 +54,14 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/calendar_widget_info" />
         </receiver>
+        <receiver android:name=".CalendarCompactWidgetProvider" android:exported="true">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/calendar_compact_widget_info" />
+        </receiver>
+        <receiver android:name=".CalendarMonthWidgetProvider" android:exported="true">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/calendar_month_widget_info" />
+        </receiver>
 
         <!-- System account authenticator (Settings → Accounts → Add account) -->
         <service

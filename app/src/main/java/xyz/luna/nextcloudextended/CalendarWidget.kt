@@ -12,7 +12,9 @@ import org.json.JSONObject
 import xyz.luna.nextcloudextended.data.model.CalendarEvent
 import java.time.LocalDateTime
 import java.time.LocalDate
+import java.time.DayOfWeek
 import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
 
 private const val WIDGET_PREFS = "calendar_widget"
 private const val EVENTS_KEY = "events"
@@ -34,13 +36,19 @@ object CalendarWidget {
     }
 
     fun refreshViews(context: Context) {
-        val manager = AppWidgetManager.getInstance(context)
-        val ids = manager.getAppWidgetIds(ComponentName(context, CalendarWidgetProvider::class.java))
-        ids.forEach { id -> manager.updateAppWidget(id, views(context)) }
+        updateProvider(context, CalendarWidgetProvider::class.java, R.layout.widget_calendar)
+        updateProvider(context, CalendarCompactWidgetProvider::class.java, R.layout.widget_calendar_compact)
+        updateProvider(context, CalendarMonthWidgetProvider::class.java, R.layout.widget_calendar_month)
     }
 
-    private fun views(context: Context): RemoteViews {
-        val views = RemoteViews(context.packageName, R.layout.widget_calendar)
+    private fun updateProvider(context: Context, provider: Class<out AppWidgetProvider>, layout: Int) {
+        val manager = AppWidgetManager.getInstance(context)
+        val ids = manager.getAppWidgetIds(ComponentName(context, provider))
+        ids.forEach { id -> manager.updateAppWidget(id, views(context, layout)) }
+    }
+
+    private fun views(context: Context, layout: Int): RemoteViews {
+        val views = RemoteViews(context.packageName, layout)
         val intent = Intent(context, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             context, 0, intent,
@@ -52,7 +60,11 @@ object CalendarWidget {
         val events = readEvents(context)
             .filter { eventDate(it.end) >= today }
             .sortedBy { it.start }
-            .take(5)
+            .take(if (layout == R.layout.widget_calendar_compact) 3 else 5)
+
+        if (layout == R.layout.widget_calendar_month) {
+            return monthViews(context, views, today, readEvents(context))
+        }
         views.removeAllViews(R.id.widget_calendar_events)
         if (events.isEmpty()) {
             views.setTextViewText(R.id.widget_calendar_empty, context.getString(R.string.widget_no_events))
@@ -65,6 +77,27 @@ object CalendarWidget {
                 row.setTextViewText(R.id.widget_event_date, formatDate(event.start, event.end))
                 views.addView(R.id.widget_calendar_events, row)
             }
+        }
+        return views
+    }
+
+    private fun monthViews(context: Context, views: RemoteViews, month: LocalDate, events: List<WidgetEvent>): RemoteViews {
+        views.setTextViewText(R.id.widget_month_title, month.format(DateTimeFormatter.ofPattern("MMMM yyyy")))
+        views.removeAllViews(R.id.widget_month_grid)
+        val first = month.withDayOfMonth(1).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        repeat(6) { rowIndex ->
+            val row = RemoteViews(context.packageName, R.layout.widget_month_row)
+            repeat(7) { column ->
+                val day = first.plusDays((rowIndex * 7L) + column)
+                val cell = RemoteViews(context.packageName, R.layout.widget_month_day)
+                cell.setTextViewText(R.id.widget_month_day_number, day.dayOfMonth.toString())
+                val occupied = events.any { eventDate(it.start) <= day && eventDate(it.end) >= day }
+                cell.setViewVisibility(R.id.widget_month_day_marker, if (occupied) android.view.View.VISIBLE else android.view.View.INVISIBLE)
+                if (day.month != month.month) cell.setTextColor(R.id.widget_month_day_number, 0x66808080)
+                if (day == LocalDate.now()) cell.setTextColor(R.id.widget_month_day_number, 0xFF0082C9.toInt())
+                row.addView(R.id.widget_month_row_container, cell)
+            }
+            views.addView(R.id.widget_month_grid, row)
         }
         return views
     }
@@ -99,6 +132,18 @@ object CalendarWidget {
 }
 
 class CalendarWidgetProvider : AppWidgetProvider() {
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        CalendarWidget.refreshViews(context)
+    }
+}
+
+class CalendarCompactWidgetProvider : AppWidgetProvider() {
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        CalendarWidget.refreshViews(context)
+    }
+}
+
+class CalendarMonthWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         CalendarWidget.refreshViews(context)
     }
