@@ -119,6 +119,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         )
     }
     LaunchedEffect(language) { vm.language = language }
+    LaunchedEffect(vm.events) { CalendarWidget.update(context, vm.events) }
     // True once the saved preferences have been read — prevents a one-frame flash of the
     // login form before the auto-login check below runs.
     var prefsLoaded by remember { mutableStateOf(false) }

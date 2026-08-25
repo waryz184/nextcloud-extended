@@ -52,10 +52,29 @@ fun calendarNameFor(calendarHref: String, calendarInfos: List<CalendarInfo>): St
 private fun parseHour(t: String?): Int = t?.takeIf { it.length >= 16 }?.substring(11, 13)?.toIntOrNull() ?: 0
 private fun parseMinute(t: String?): Int = t?.takeIf { it.length >= 16 }?.substring(14, 16)?.toIntOrNull() ?: 0
 private fun isAllDay(t: String?): Boolean = t == null || t.length == 10
+private fun eventDate(t: String?): LocalDate? = t?.take(10)?.let {
+    try { LocalDate.parse(it) } catch (_: Exception) { null }
+}
+
+/** Whether an event is visible on a calendar day, including days after its start. */
+private fun eventOccursOn(event: CalendarEvent, day: LocalDate): Boolean {
+    val start = eventDate(event.startTime) ?: return false
+    val end = eventDate(event.endTime) ?: start
+    return day >= start && day <= end
+}
+
 private fun durationMinutes(start: String?, end: String?): Int {
     if (start == null || end == null) return 60
     val diff = (parseHour(end) * 60 + parseMinute(end)) - (parseHour(start) * 60 + parseMinute(start))
     return if (diff <= 0) 60 else diff
+}
+
+private fun eventMinutesOnDate(event: CalendarEvent, day: LocalDate): Pair<Int, Int> {
+    val startDate = eventDate(event.startTime) ?: day
+    val endDate = eventDate(event.endTime) ?: startDate
+    val start = if (day > startDate) 0 else parseHour(event.startTime) * 60 + parseMinute(event.startTime)
+    val end = if (day < endDate) 24 * 60 else parseHour(event.endTime) * 60 + parseMinute(event.endTime)
+    return start to if (end > start) end else start + durationMinutes(event.startTime, event.endTime)
 }
 
 // ── Root composable ────────────────────────────────────────────────────────────
@@ -130,7 +149,7 @@ fun MonthView(
     val yearMonth = YearMonth.of(selectedDate.year, selectedDate.month)
     val paddingDays = yearMonth.atDay(1).dayOfWeek.value - 1
     val headerFmt = DateTimeFormatter.ofPattern("MMMM yyyy", s.locale)
-    val dayOfMonthEvents = events.filter { it.startTime?.startsWith(selectedDate.toString()) == true }
+    val dayOfMonthEvents = events.filter { eventOccursOn(it, selectedDate) }
 
     Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         // Month nav
@@ -158,9 +177,9 @@ fun MonthView(
                     row.forEach { day ->
                         val isSelected = day == selectedDate
                         val isToday = day == LocalDate.now()
-                        val dayEvs = if (day != null) events.filter { it.startTime?.startsWith(day.toString()) == true } else emptyList()
+                        val dayEvs = if (day != null) events.filter { eventOccursOn(it, day) } else emptyList()
                         Box(
-                            modifier = Modifier.weight(1f).aspectRatio(0.9f).padding(2.dp)
+                            modifier = Modifier.weight(1f).aspectRatio(0.9f).padding(vertical = 2.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(when {
                                     day == null -> Color.Transparent
@@ -190,14 +209,18 @@ fun MonthView(
                                             }
                                         )
                                     }
-                                    // Event dots (up to 3)
+                                    // A segment is rendered on every occupied day so multi-day
+                                    // events remain visible across the whole month grid.
                                     if (dayEvs.isNotEmpty()) {
                                         Spacer(Modifier.height(2.dp))
-                                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                                             dayEvs.take(3).forEach { ev ->
-                                                Box(Modifier.size(5.dp).clip(CircleShape).background(
-                                                    if (isSelected) MaterialTheme.colorScheme.onPrimary else calendarColorFor(ev.calendarHref, calendarInfos)
-                                                ))
+                                                Box(
+                                                    Modifier.fillMaxWidth().height(5.dp).background(
+                                                        if (isSelected) MaterialTheme.colorScheme.onPrimary
+                                                        else calendarColorFor(ev.calendarHref, calendarInfos)
+                                                    )
+                                                )
                                             }
                                         }
                                     }
@@ -244,7 +267,7 @@ fun DayTimeGrid(
 ) {
     val s = LocalStrings.current
     val dayFmt = DateTimeFormatter.ofPattern("EEE d MMMM yyyy", s.locale)
-    val dayEvents = events.filter { it.startTime?.startsWith(selectedDate.toString()) == true }
+    val dayEvents = events.filter { eventOccursOn(it, selectedDate) }
     val timedEvents = dayEvents.filter { !isAllDay(it.startTime) }
     val allDayEvents = dayEvents.filter { isAllDay(it.startTime) }
 
@@ -307,10 +330,9 @@ fun DayTimeGrid(
                 }
                 // Events
                 timedEvents.forEach { event ->
-                    val startH = parseHour(event.startTime)
-                    val startM = parseMinute(event.startTime)
-                    val durMin = durationMinutes(event.startTime, event.endTime)
-                    val topDp = HOUR_HEIGHT * (startH + startM / 60f)
+                    val (startMin, endMin) = eventMinutesOnDate(event, selectedDate)
+                    val durMin = endMin - startMin
+                    val topDp = HOUR_HEIGHT * startMin / 60f
                     val heightDp = (HOUR_HEIGHT * durMin / 60f).coerceAtLeast(28.dp)
                     val color = calendarColorFor(event.calendarHref, calendarInfos)
                     Box(
@@ -372,7 +394,7 @@ fun WeekView(
                 val day = startOfWeek.plusDays(i.toLong())
                 val isSelected = day == selectedDate
                 val isToday = day == LocalDate.now()
-                val dayEvCount = events.count { it.startTime?.startsWith(day.toString()) == true }
+                val dayEvCount = events.count { eventOccursOn(it, day) }
                 Box(
                     modifier = Modifier.weight(1f).clickable { onDateChange(day) }.padding(2.dp),
                     contentAlignment = Alignment.Center
@@ -405,7 +427,7 @@ fun WeekView(
         Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
             for (i in 0..6) {
                 val day = startOfWeek.plusDays(i.toLong())
-                val dayEvs = events.filter { it.startTime?.startsWith(day.toString()) == true }
+                val dayEvs = events.filter { eventOccursOn(it, day) }
                 val isToday = day == LocalDate.now()
                 val isSelected = day == selectedDate
                 Row(

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="widget_calendar_title">Nextcloud Calendar</string>
+    <string name="widget_no_events">No upcoming events</string>
     <string name="account_type_label">Nextcloud Extended</string>
     <string name="auth_token_label">App password</string>
 </resources>
