@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.os.Bundle
 import android.webkit.MimeTypeMap
 import androidx.activity.ComponentActivity
@@ -37,7 +38,6 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import xyz.luna.nextcloudextended.data.model.CalendarEvent
 import xyz.luna.nextcloudextended.data.model.NextcloudContact
 import xyz.luna.nextcloudextended.data.model.NextcloudFile
@@ -49,7 +49,6 @@ import xyz.luna.nextcloudextended.sync.AccountSetupActivity
 import xyz.luna.nextcloudextended.ui.screens.*
 import xyz.luna.nextcloudextended.ui.theme.NextcloudExtendedTheme
 import java.io.File
-import java.io.ByteArrayOutputStream
 import java.util.Locale
 import java.util.UUID
 
@@ -77,19 +76,6 @@ fun HubTab.label(s: Strings): String = when (this) {
 
 private val officeExtensions = setOf("xlsx", "xls", "docx", "pptx", "csv")
 private data class OfficeViewData(val fileName: String, val bytes: ByteArray?, val filePath: String)
-private const val MAX_IN_MEMORY_FILE_BYTES = 25 * 1024 * 1024
-
-private fun java.io.InputStream.readUpTo(maxBytes: Int): ByteArray {
-    val output = ByteArrayOutputStream()
-    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-    while (true) {
-        val count = read(buffer)
-        if (count < 0) return output.toByteArray()
-        if (output.size() + count > maxBytes) throw IllegalArgumentException("File exceeds the 25 MB in-app limit")
-        output.write(buffer, 0, count)
-    }
-}
-
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -188,11 +174,12 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         if (uri != null) {
             coroutineScope.launch {
                 try {
-                    val bytes = withContext(Dispatchers.IO) {
-                        context.contentResolver.openInputStream(uri)?.use { it.readUpTo(MAX_IN_MEMORY_FILE_BYTES) }
-                    }
                     val fileName = getFileNameFromUri(context, uri) ?: "upload_${System.currentTimeMillis()}"
-                    if (bytes != null) vm.uploadFile(fileName, bytes)
+                    val fileSize = getFileSizeFromUri(context, uri)
+                    vm.uploadFile(fileName, fileSize) {
+                        context.contentResolver.openInputStream(uri)
+                            ?: throw java.io.IOException("Unable to open selected file")
+                    }
                 } catch (e: Exception) { vm.errorMessage = s.fileReadError(e.message ?: "") }
             }
         }
@@ -634,6 +621,11 @@ LaunchedEffect(vm.currentTab, vm.isConnected) {
     }
     }
 }
+
+private fun getFileSizeFromUri(context: Context, uri: Uri): Long? =
+    context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
+    }
 
 // Branded loading screen shown while reconnecting automatically with the stored credentials,
 // so the pre-filled login form doesn't flash for a second on app start.

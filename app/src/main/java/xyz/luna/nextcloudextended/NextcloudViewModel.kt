@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import java.io.InputStream
 import xyz.luna.nextcloudextended.data.model.CalendarEvent
 import xyz.luna.nextcloudextended.data.model.CalendarInfo
 import xyz.luna.nextcloudextended.data.model.NextcloudFile
@@ -406,9 +407,9 @@ class NextcloudViewModel : ViewModel() {
         )
     }
 
-    fun uploadFile(fileName: String, bytes: ByteArray) {
+    fun uploadFile(fileName: String, contentLength: Long?, openStream: () -> InputStream) {
         loadingCount++
-        client?.uploadFile(currentFolderPath, fileName, bytes,
+        client?.uploadFile(currentFolderPath, fileName, contentLength, openStream,
             onSuccess = { refreshAndStop() },
             onFailure = { err -> errorMessage = s.uploadFailed(msg(err)); endLoad() }
         )

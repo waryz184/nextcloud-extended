@@ -22,8 +22,8 @@ android {
         applicationId = "xyz.luna.nextcloudextended"
         minSdk = 26
         targetSdk = 35
-        versionCode = 31
-        versionName = "2.4.1"
+        versionCode = 32
+        versionName = "2.4.2"
         multiDexEnabled = true
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

@@ -14,8 +14,9 @@ or to any third party.**
   server URL you provide, over an encrypted HTTPS connection.
 - **Your content** (calendar events, tasks, notes, files): read from and written to **your own
   Nextcloud server only**, using standard protocols (CalDAV, WebDAV, and the Nextcloud Notes API).
-  None of this content passes through any server controlled by us. In-app preview is limited to
-  25 MB per file; larger files are handled by the system download manager.
+  None of this content passes through any server controlled by us. File uploads are streamed
+  directly from the selected document to your server; in-app previews are limited to 25 MB per
+  file and larger files are handled by the system download manager.
 
 ## What we do NOT do
 

@@ -12,9 +12,11 @@ import okhttp3.Credentials
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.UUID
@@ -56,7 +58,7 @@ class CalDavClient(
     private fun readResponseBody(response: okhttp3.Response): ByteArray {
         val body = response.body ?: throw IOException("Empty response body")
         if (body.contentLength() > MAX_IN_MEMORY_FILE_BYTES) {
-            throw IOException("File exceeds the 25 MB in-app limit")
+            throw IOException("File is too large for an in-app preview (25 MB maximum)")
         }
         body.byteStream().use { input ->
             val output = ByteArrayOutputStream()
@@ -65,7 +67,7 @@ class CalDavClient(
                 val count = input.read(buffer)
                 if (count < 0) return output.toByteArray()
                 if (output.size() + count > MAX_IN_MEMORY_FILE_BYTES) {
-                    throw IOException("File exceeds the 25 MB in-app limit")
+                    throw IOException("File is too large for an in-app preview (25 MB maximum)")
                 }
                 output.write(buffer, 0, count)
             }
@@ -574,16 +576,38 @@ class CalDavClient(
         })
     }
 
-    fun uploadFile(parentHref: String, fileName: String, fileBytes: ByteArray, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
+    fun uploadFile(
+        parentHref: String,
+        fileName: String,
+        contentLength: Long?,
+        openStream: () -> InputStream,
+        onSuccess: () -> Unit,
+        onFailure: (Exception) -> Unit
+    ) {
         if (!isValidDavName(fileName)) {
             runOnMain { onFailure(IllegalArgumentException("Invalid file name")) }
             return
         }
         val cleanParent = if (parentHref.endsWith("/")) parentHref else "$parentHref/"
+        val requestBody = object : RequestBody() {
+            override fun contentType() = "application/octet-stream".toMediaType()
+            override fun contentLength() = contentLength ?: -1L
+
+            override fun writeTo(sink: okio.BufferedSink) {
+                openStream().use { input ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        sink.write(buffer, 0, count)
+                    }
+                }
+            }
+        }
         val request = Request.Builder()
             .url("$baseUrl${encodePath("$cleanParent$fileName")}")
             .addHeader("Authorization", credentials)
-            .put(fileBytes.toRequestBody("application/octet-stream".toMediaType()))
+            .put(requestBody)
             .build()
 
         client.newCall(request).enqueueTracked(object : okhttp3.Callback {
