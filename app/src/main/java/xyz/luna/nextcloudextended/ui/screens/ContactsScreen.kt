@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -211,7 +212,7 @@ fun ContactDetailSheet(
                 DetailRow(Icons.Default.LocationOn, formatAddress(a), a.type.takeIf { it.isNotBlank() }?.let { typeLabel(s, it) }) { onOpenMap(formatAddress(a)) }
             }
             contact.birthday?.takeIf { it.isNotBlank() }?.let { DetailRow(Icons.Default.Cake, it, s.birthday) }
-            contact.categories.takeIf { it.isNotEmpty() }?.let { DetailRow(Icons.Default.Label, it.joinToString(", "), s.groups) }
+            contact.categories.takeIf { it.isNotEmpty() }?.let { DetailRow(Icons.AutoMirrored.Filled.Label, it.joinToString(", "), s.groups) }
 
             Spacer(Modifier.height(16.dp)); HorizontalDivider(); Spacer(Modifier.height(8.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {

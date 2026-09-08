@@ -5,20 +5,30 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
+import android.app.Application
+import xyz.luna.nextcloudextended.upload.OfflineCacheManager
+import xyz.luna.nextcloudextended.upload.NextcloudDatabase
+import xyz.luna.nextcloudextended.upload.OfflineOperationEntity
 import java.io.InputStream
+import java.io.File
 import xyz.luna.nextcloudextended.data.model.CalendarEvent
 import xyz.luna.nextcloudextended.data.model.CalendarInfo
 import xyz.luna.nextcloudextended.data.model.NextcloudFile
 import xyz.luna.nextcloudextended.data.model.NextcloudNote
 import xyz.luna.nextcloudextended.data.model.NextcloudTask
 import xyz.luna.nextcloudextended.data.model.NextcloudContact
+import xyz.luna.nextcloudextended.data.model.NextcloudCapabilities
+import xyz.luna.nextcloudextended.data.model.NextcloudShare
 import xyz.luna.nextcloudextended.data.network.CalDavClient
+import xyz.luna.nextcloudextended.data.network.CapabilitiesClient
 import java.time.LocalDate
 
-class NextcloudViewModel : ViewModel() {
+class NextcloudViewModel(application: Application) : AndroidViewModel(application) {
 
     var isConnected by mutableStateOf(false)
     var client by mutableStateOf<CalDavClient?>(null)
+    var serverCapabilities by mutableStateOf(NextcloudCapabilities.unavailable())
 
     // Set once an automatic login with the stored credentials has been attempted. Living in
     // the ViewModel, it survives configuration changes (no re-trigger on rotation) but resets
@@ -60,7 +70,16 @@ class NextcloudViewModel : ViewModel() {
     var pinnedTabs by mutableStateOf(DEFAULT_PINNED_TABS)
 
     var errorMessage by mutableStateOf<String?>(null)
-    var shareLink by mutableStateOf<String?>(null)
+var shareLink by mutableStateOf<String?>(null)
+    var shares by mutableStateOf<List<NextcloudShare>>(emptyList())
+    var sharesFilePath by mutableStateOf<String?>(null)
+    var conflictFile by mutableStateOf<ConflictFile?>(null)
+
+    data class ConflictFile(
+        val fileName: String,
+        val localBytes: ByteArray?,
+        val serverEtag: String?
+    )
 
     private fun msg(e: Exception?): String = e?.message ?: ""
 
@@ -150,6 +169,11 @@ class NextcloudViewModel : ViewModel() {
                 } else { endLoad() }
             }
             HubTab.NOTES -> {
+                if (serverCapabilities.discovered && !serverCapabilities.has("notes")) {
+                    notes = emptyList()
+                    endLoad()
+                    return
+                }
                 c.getNotes(
                     onSuccess = { list ->
                         notes = list.sortedWith(compareByDescending<NextcloudNote> { it.favorite }.thenByDescending { it.modified })
@@ -200,6 +224,7 @@ class NextcloudViewModel : ViewModel() {
     fun connect(serverUrl: String, username: String, password: String, onSaveCredentials: () -> Unit) {
         val generation = ++sessionGeneration
         client?.cancelAll()
+        serverCapabilities = NextcloudCapabilities.unavailable()
         loadingCount++
         val c = CalDavClient(serverUrl, username, password)
         client = c
@@ -211,6 +236,12 @@ class NextcloudViewModel : ViewModel() {
                 activeCalendarHrefs = eventCals.map { it.href }.toSet()
                 taskLists = taskListData
                 isConnected = true
+                CapabilitiesClient(serverUrl, username, password).getCapabilities(
+                    onSuccess = { capabilities ->
+                        if (generation == sessionGeneration && client === c) serverCapabilities = capabilities
+                    },
+                    onFailure = { /* Capability discovery is optional; protocol clients remain usable. */ }
+                )
                 if (taskListData.isNotEmpty()) {
                     val todo = taskListData.find { it.second.lowercase().contains("todo") || it.first.lowercase().contains("todo") } ?: taskListData[0]
                     selectedTaskListHref = todo.first
@@ -233,6 +264,7 @@ class NextcloudViewModel : ViewModel() {
         client?.cancelAll()
         onClearPrefs()
         isConnected = false; client = null
+        serverCapabilities = NextcloudCapabilities.unavailable()
         calendarInfos = emptyList(); activeCalendarHrefs = emptySet()
         taskLists = emptyList(); events = emptyList(); tasks = emptyList()
         notes = emptyList(); files = emptyList()
@@ -399,6 +431,14 @@ class NextcloudViewModel : ViewModel() {
         )
     }
 
+    fun transferFile(path: String, destination: String, copy: Boolean) {
+        loadingCount++
+        client?.transferFile(path, destination, copy,
+            onSuccess = { refreshAndStop() },
+            onFailure = { err -> errorMessage = s.fileRenameFailed(msg(err)); endLoad() }
+        )
+    }
+
     fun createFolder(name: String) {
         loadingCount++
         client?.createFolder(currentFolderPath, name,
@@ -407,18 +447,68 @@ class NextcloudViewModel : ViewModel() {
         )
     }
 
-    fun uploadFile(fileName: String, contentLength: Long?, openStream: () -> InputStream) {
+fun uploadFile(fileName: String, contentLength: Long?, openStream: () -> InputStream) {
         loadingCount++
         client?.uploadFile(currentFolderPath, fileName, contentLength, openStream,
             onSuccess = { refreshAndStop() },
+            onFailure = { err ->
+                endLoad()
+                if (err is xyz.luna.nextcloudextended.data.network.ConflictException) {
+                    val bytes = runCatching {
+                        val buf = java.io.ByteArrayOutputStream()
+                        openStream().use { input -> input.copyTo(buf) }
+                        buf.toByteArray()
+                    }.getOrNull()
+                    conflictFile = ConflictFile(fileName, bytes, err.serverEtag)
+                } else {
+                    errorMessage = s.uploadFailed(msg(err))
+                }
+            }
+        )
+    }
+
+    fun resolveConflictOverwrite(fileName: String, localBytes: ByteArray?) {
+        if (localBytes == null) { conflictFile = null; return }
+        loadingCount++
+        client?.uploadFile(currentFolderPath, fileName, localBytes.size.toLong(), { localBytes.inputStream() },
+            onSuccess = { conflictFile = null; refreshAndStop() },
             onFailure = { err -> errorMessage = s.uploadFailed(msg(err)); endLoad() }
         )
     }
+
+    fun resolveConflictRename(fileName: String, localBytes: ByteArray?) {
+        if (localBytes == null) { conflictFile = null; return }
+        val renamed = "${fileName.substringBeforeLast('.')} (conflict ${System.currentTimeMillis()}).${fileName.substringAfterLast('.', "bin")}"
+        loadingCount++
+        client?.uploadFile(currentFolderPath, renamed, localBytes.size.toLong(), { localBytes.inputStream() },
+            onSuccess = { conflictFile = null; refreshAndStop() },
+            onFailure = { err -> errorMessage = s.uploadFailed(msg(err)); endLoad() }
+        )
+    }
+
+    fun dismissConflict() { conflictFile = null }
 
     fun createShareLink(file: NextcloudFile) {
         loadingCount++
         client?.createShareLink(file.path,
             onSuccess = { url -> shareLink = url; endLoad() },
+            onFailure = { err -> errorMessage = s.shareLinkFailed(msg(err)); endLoad() }
+        )
+    }
+
+    fun loadShares(file: NextcloudFile) {
+        loadingCount++
+        sharesFilePath = file.path
+        client?.getShares(file.path,
+            onSuccess = { result -> shares = result; endLoad() },
+            onFailure = { err -> errorMessage = s.shareLinkFailed(msg(err)); endLoad() }
+        )
+    }
+
+    fun revokeShare(share: NextcloudShare) {
+        loadingCount++
+        client?.deleteShare(share.id,
+            onSuccess = { shares = shares.filterNot { it.id == share.id }; endLoad() },
             onFailure = { err -> errorMessage = s.shareLinkFailed(msg(err)); endLoad() }
         )
     }
@@ -436,6 +526,22 @@ class NextcloudViewModel : ViewModel() {
         client?.downloadFile(fileHref,
             onSuccess = { bytes -> endLoad(); onSuccess(bytes) },
             onFailure = { err -> errorMessage = s.downloadFailed(msg(err)); endLoad() }
+        )
+    }
+
+    // Streams a download directly to a file on disk, bypassing the in-memory 25 MB preview
+    // limit. Used by the PDF/Office previews to support larger files.
+    fun downloadFileToCache(
+        fileName: String,
+        fileHref: String,
+        onSuccess: (File) -> Unit,
+        onFailure: (Exception) -> Unit = { err -> errorMessage = s.downloadFailed(msg(err)); endLoad() }
+    ) {
+        loadingCount++
+        val file = File(getApplication<Application>().cacheDir, fileName)
+        client?.downloadFileTo(fileHref, file.outputStream(),
+            onSuccess = { endLoad(); onSuccess(file) },
+            onFailure = { error -> endLoad(); onFailure(error) }
         )
     }
 

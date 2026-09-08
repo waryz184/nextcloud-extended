@@ -9,6 +9,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -154,9 +156,9 @@ fun MonthView(
     Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         // Month nav
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { onDateChange(selectedDate.minusMonths(1)) }) { Icon(Icons.Default.KeyboardArrowLeft, null) }
+            IconButton(onClick = { onDateChange(selectedDate.minusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null) }
             Text(selectedDate.format(headerFmt).replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            IconButton(onClick = { onDateChange(selectedDate.plusMonths(1)) }) { Icon(Icons.Default.KeyboardArrowRight, null) }
+            IconButton(onClick = { onDateChange(selectedDate.plusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) }
         }
 
         // Day-of-week header
@@ -274,11 +276,11 @@ fun DayTimeGrid(
     Column(modifier = Modifier.fillMaxWidth()) {
         // Day navigation
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { onDateChange(selectedDate.minusDays(1)) }) { Icon(Icons.Default.KeyboardArrowLeft, null) }
+            IconButton(onClick = { onDateChange(selectedDate.minusDays(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null) }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(selectedDate.format(dayFmt).replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             }
-            IconButton(onClick = { onDateChange(selectedDate.plusDays(1)) }) { Icon(Icons.Default.KeyboardArrowRight, null) }
+            IconButton(onClick = { onDateChange(selectedDate.plusDays(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) }
         }
 
         // All-day events strip
@@ -383,9 +385,9 @@ fun WeekView(
     Column(modifier = Modifier.fillMaxWidth()) {
         // Week nav header
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { onDateChange(selectedDate.minusWeeks(1)) }) { Icon(Icons.Default.KeyboardArrowLeft, null) }
+            IconButton(onClick = { onDateChange(selectedDate.minusWeeks(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null) }
             Text("${startOfWeek.format(weekFmt)} – ${startOfWeek.plusDays(6).format(weekFmt)}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            IconButton(onClick = { onDateChange(selectedDate.plusWeeks(1)) }) { Icon(Icons.Default.KeyboardArrowRight, null) }
+            IconButton(onClick = { onDateChange(selectedDate.plusWeeks(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) }
         }
 
         // Day column headers (tappable to navigate to day view)
@@ -484,9 +486,9 @@ fun YearView(selectedDate: LocalDate, onDateChange: (LocalDate) -> Unit, onYearC
     val s = LocalStrings.current
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { onYearChange(selectedDate.withYear(selectedDate.year - 1)) }) { Icon(Icons.Default.KeyboardArrowLeft, null) }
+            IconButton(onClick = { onYearChange(selectedDate.withYear(selectedDate.year - 1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null) }
             Text("${selectedDate.year}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            IconButton(onClick = { onYearChange(selectedDate.withYear(selectedDate.year + 1)) }) { Icon(Icons.Default.KeyboardArrowRight, null) }
+            IconButton(onClick = { onYearChange(selectedDate.withYear(selectedDate.year + 1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) }
         }
         Spacer(Modifier.height(8.dp))
         Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {

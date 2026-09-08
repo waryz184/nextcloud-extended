@@ -2,9 +2,9 @@
 
 A native Android client for self-hosted Nextcloud servers. It brings your **calendar, tasks,
 notes, contacts and files** together in a single app, built with **Kotlin** and **Jetpack Compose**
-(Material 3). It talks directly to standard Nextcloud protocols — CalDAV, CardDAV, WebDAV and the
-Notes API — so there is no backend in between: your data only ever travels between your device and
-your own server.
+(Material 3). It talks directly to standard Nextcloud protocols — CalDAV, CardDAV, WebDAV, the
+Notes API and OCS — so there is no backend in between: your data only ever travels between your
+device and your own server.
 
 The app is **bilingual (English / French)**: pick your language on the login screen, or let it
 follow your device locale on first launch.
@@ -13,10 +13,27 @@ follow your device locale on first launch.
 
 ## Features
 
+### 📊 Files (WebDAV + OCS)
+- Browse your storage with folder navigation, grid/list search and configurable sorting.
+- Upload, download, rename, **copy and move** files; create folders.
+- **Persistent transfer queue** (Room + WorkManager) with automatic retry, progress, history,
+  cancel and re-run — uploads survive process death and network loss.
+- Generate public share links, **list existing shares and revoke them** (OCS Share API).
+- **Make files available offline** with a per-account cache, offline file manager and reuse of the
+  cache when opening documents.
+- **Offline operations queue**: deletes, renames and folder creation are replayed automatically
+  when the connection returns.
+- **Conflict detection** via WebDAV ETags (412/409): choose to overwrite, keep both or skip.
+- Android **content provider** (read + write): files open, save back, rename and delete from
+  Files-by-Google and any compatible file manager.
+- Share files into the app from any Android app (single or multiple).
+- Capture photos and **scan multi-page documents** straight into a single PDF.
+
 ### 📅 Calendar (CalDAV)
 - Day, week, month and year views.
 - Multiple calendars with their server-defined colours, toggled on/off individually.
 - Create, edit and delete events; tap an event for a detail sheet with time, location and notes.
+- Calendar home-screen widgets.
 
 ### ✅ Tasks (CalDAV)
 - Browse, create, rename and delete task lists.
@@ -27,19 +44,25 @@ follow your device locale on first launch.
 - Create, edit and delete notes with categories and favourites.
 - Markdown rendering for viewing.
 - Full-text search.
+- The tab is hidden automatically when the Notes app is not installed on your server.
 
 ### 👤 Contacts (CardDAV)
 - Browse contacts across your address books, each shown with its photo or an initials avatar.
 - Create, edit and delete contacts: photo, name, organization, birthday, labelled phone numbers
-  and emails (mobile / home / work…), postal addresses and groups.
+  and emails, postal addresses and groups.
 - Tap a phone number to call, an email to compose, or an address to open it in maps.
 - Search by name, phone, email, organization or group.
+- Optional sync to the Android Contacts app via a system account.
 
-### 📁 Files (WebDAV)
-- Browse your storage with folder navigation.
-- Upload, download, rename and delete files; create folders.
-- Generate public share links and open files in other apps.
-- Search within the current folder.
+### 🛡️ Accounts, security & uploads
+- **Multiple accounts** with secure per-account credential storage, account switcher and strict
+  isolation of queues and caches between accounts.
+- Server **capability discovery** (`/ocs/v2.php/cloud/capabilities`); optional features are hidden
+  when the matching Nextcloud app is absent.
+- **Optional media auto-upload** (new photos and videos) with a configurable destination folder,
+  Wi-Fi-only and charging-only constraints.
+- **App lock** using biometrics or the device credential (AndroidX BiometricPrompt), with
+  automatic screen protection while locked.
 
 ---
 
@@ -49,7 +72,8 @@ follow your device locale on first launch.
 - Credentials are stored **encrypted on-device** (`EncryptedSharedPreferences`, AES-256).
 - **HTTPS is enforced by default.** Plain HTTP is an opt-in in the advanced options, intended only
   for a server on a trusted local network.
-- A single permission is requested: Internet.
+- Permissions are requested only when a feature needs them: Internet, camera, media access,
+  biometrics and legacy storage on older Android versions.
 
 See [PRIVACY.md](PRIVACY.md) for the full policy.
 
@@ -70,7 +94,10 @@ is recommended rather than your main account password.
 
 - **Language:** Kotlin (JVM 17)
 - **UI:** Jetpack Compose, Material 3
-- **Networking:** OkHttp — custom CalDAV / WebDAV / JSON clients
+- **Networking:** OkHttp — custom CalDAV / WebDAV / OCS / JSON clients
+- **Persistence:** Room (transfer queues, offline cache, offline operations), encrypted session
+  preferences (AES-256)
+- **Background:** WorkManager with network/battery constraints and unique per-account work
 - **Parsing:** native `XmlPullParser` for WebDAV multi-status responses; lightweight in-app Markdown rendering
 - **Min SDK:** 26 (Android 8.0) · **Target SDK:** 35
 

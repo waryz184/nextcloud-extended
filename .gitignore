@@ -33,3 +33,5 @@ keystore.properties
 
 # Tool output
 graphify-out/
+dist/
+

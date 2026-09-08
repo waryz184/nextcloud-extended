@@ -7,6 +7,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,11 +27,15 @@ fun FilesScreen(
     files: List<NextcloudFile>,
     onFileClick: (NextcloudFile) -> Unit,
     onOpenFile: (NextcloudFile) -> Unit,
+    canShareFiles: Boolean,
     onShareFile: (NextcloudFile) -> Unit,
     onDownloadFile: (NextcloudFile) -> Unit,
+    onMakeOffline: (NextcloudFile) -> Unit,
     onBackClick: () -> Unit,
     onDeleteFile: (NextcloudFile) -> Unit,
     onRenameFile: (NextcloudFile) -> Unit
+    , onCopyFile: (NextcloudFile) -> Unit
+    , onMoveFile: (NextcloudFile) -> Unit
 ) {
     val s = LocalStrings.current
     var searchQuery by remember { mutableStateOf("") }
@@ -62,7 +69,7 @@ fun FilesScreen(
                         .clickable(onClick = onBackClick),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.ArrowBack, s.back)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, s.back)
                 }
                 VerticalDivider(modifier = Modifier.height(32.dp))
                 OutlinedTextField(
@@ -110,9 +117,13 @@ fun FilesScreen(
                         file = file,
                         onClick = { onFileClick(file) },
                         onOpen = { onOpenFile(file) },
+                        canShare = canShareFiles,
                         onShare = { onShareFile(file) },
                         onDownload = { onDownloadFile(file) },
+                        onMakeOffline = { onMakeOffline(file) },
                         onRename = { onRenameFile(file) },
+                        onCopy = { onCopyFile(file) },
+                        onMove = { onMoveFile(file) },
                         onDelete = { onDeleteFile(file) }
                     )
                 }
@@ -126,9 +137,13 @@ fun FileItem(
     file: NextcloudFile,
     onClick: () -> Unit,
     onOpen: () -> Unit,
+    canShare: Boolean,
     onShare: () -> Unit,
     onDownload: () -> Unit,
+    onMakeOffline: () -> Unit,
     onRename: () -> Unit,
+    onCopy: () -> Unit,
+    onMove: () -> Unit,
     onDelete: () -> Unit
 ) {
     val s = LocalStrings.current
@@ -170,24 +185,41 @@ fun FileItem(
                     if (!file.isDirectory) {
                         DropdownMenuItem(
                             text = { Text(s.open) },
-                            leadingIcon = { Icon(Icons.Default.OpenInNew, null, tint = MaterialTheme.colorScheme.primary) },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null, tint = MaterialTheme.colorScheme.primary) },
                             onClick = { menuExpanded = false; onOpen() }
                         )
-                        DropdownMenuItem(
-                            text = { Text(s.share) },
-                            leadingIcon = { Icon(Icons.Default.Share, null, tint = MaterialTheme.colorScheme.secondary) },
-                            onClick = { menuExpanded = false; onShare() }
-                        )
+                        if (canShare) {
+                            DropdownMenuItem(
+                                text = { Text(s.share) },
+                                leadingIcon = { Icon(Icons.Default.Share, null, tint = MaterialTheme.colorScheme.secondary) },
+                                onClick = { menuExpanded = false; onShare() }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text(s.download) },
                             leadingIcon = { Icon(Icons.Default.Download, null, tint = MaterialTheme.colorScheme.primary) },
                             onClick = { menuExpanded = false; onDownload() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Available offline") },
+                            leadingIcon = { Icon(Icons.Default.CloudDownload, null, tint = MaterialTheme.colorScheme.primary) },
+                            onClick = { menuExpanded = false; onMakeOffline() }
                         )
                     }
                     DropdownMenuItem(
                         text = { Text(s.rename) },
                         leadingIcon = { Icon(Icons.Default.Edit, null, tint = MaterialTheme.colorScheme.tertiary) },
                         onClick = { menuExpanded = false; onRename() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Copy to") },
+                        leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                        onClick = { menuExpanded = false; onCopy() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Move to") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.DriveFileMove, null) },
+                        onClick = { menuExpanded = false; onMove() }
                     )
                     DropdownMenuItem(
                         text = { Text(s.delete) },

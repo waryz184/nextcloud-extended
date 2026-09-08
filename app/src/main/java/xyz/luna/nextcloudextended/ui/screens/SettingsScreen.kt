@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Person
@@ -31,13 +31,14 @@ import xyz.luna.nextcloudextended.LocalStrings
 import xyz.luna.nextcloudextended.OfficeViewerType
 import xyz.luna.nextcloudextended.account.NextcloudAccountManager
 import xyz.luna.nextcloudextended.account.NextcloudAccounts
+import xyz.luna.nextcloudextended.account.AccountProfile
 import xyz.luna.nextcloudextended.icon
 import xyz.luna.nextcloudextended.label
 
 private const val MIN_PINNED_TABS = 1
 private const val MAX_PINNED_TABS = 4
 
-private enum class SettingsCategory { OFFICE_VIEWER, NAVIGATION_BAR, CONTACTS_SYNC }
+private enum class SettingsCategory { ACCOUNTS, OFFICE_VIEWER, NAVIGATION_BAR, CONTACTS_SYNC, AUTO_UPLOAD }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,6 +47,19 @@ fun SettingsScreen(
     onOfficeViewerPrefChange: (OfficeViewerType) -> Unit,
     pinnedTabs: List<HubTab>,
     onPinnedTabsChange: (List<HubTab>) -> Unit,
+    appLockEnabled: Boolean,
+    onAppLockChange: (Boolean) -> Unit,
+    mediaAutoUploadEnabled: Boolean,
+    onMediaAutoUploadChange: (Boolean) -> Unit,
+    mediaWifiOnly: Boolean = false,
+    onMediaWifiOnlyChange: (Boolean) -> Unit = {},
+    mediaChargingOnly: Boolean = false,
+    onMediaChargingOnlyChange: (Boolean) -> Unit = {},
+    mediaSubfolder: String = "InstantUpload",
+    onMediaSubfolderChange: (String) -> Unit = {},
+    accounts: List<AccountProfile>,
+    activeAccountId: String?,
+    onAccountSelected: (AccountProfile) -> Unit,
     onDismiss: () -> Unit
 ) {
     val s = LocalStrings.current
@@ -60,6 +74,8 @@ fun SettingsScreen(
                     Text(
                         when (category) {
                             null -> s.settings
+                            SettingsCategory.ACCOUNTS -> "Accounts"
+                            SettingsCategory.AUTO_UPLOAD -> "Automatic media upload"
                             SettingsCategory.OFFICE_VIEWER -> s.officeViewerSection
                             SettingsCategory.NAVIGATION_BAR -> s.navBarSection
                             SettingsCategory.CONTACTS_SYNC -> s.contactsSyncSection
@@ -68,7 +84,7 @@ fun SettingsScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = { if (category != null) category = null else onDismiss() }) {
-                        Icon(Icons.Default.ArrowBack, s.back)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, s.back)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -83,7 +99,29 @@ fun SettingsScreen(
             null -> SettingsRoot(
                 modifier = Modifier.padding(padding),
                 officeViewerPref = officeViewerPref,
-                onCategoryClick = { category = it }
+                onCategoryClick = { category = it },
+                appLockEnabled = appLockEnabled,
+                onAppLockChange = onAppLockChange,
+                mediaAutoUploadEnabled = mediaAutoUploadEnabled,
+                mediaSubfolder = mediaSubfolder,
+                accounts = accounts
+            )
+            SettingsCategory.ACCOUNTS -> AccountsSettings(
+                modifier = Modifier.padding(padding),
+                accounts = accounts,
+                activeAccountId = activeAccountId,
+                onAccountSelected = onAccountSelected
+            )
+            SettingsCategory.AUTO_UPLOAD -> AutoUploadSettings(
+                modifier = Modifier.padding(padding),
+                mediaAutoUploadEnabled = mediaAutoUploadEnabled,
+                onMediaAutoUploadChange = onMediaAutoUploadChange,
+                mediaWifiOnly = mediaWifiOnly,
+                onMediaWifiOnlyChange = onMediaWifiOnlyChange,
+                mediaChargingOnly = mediaChargingOnly,
+                onMediaChargingOnlyChange = onMediaChargingOnlyChange,
+                mediaSubfolder = mediaSubfolder,
+                onMediaSubfolderChange = onMediaSubfolderChange
             )
             SettingsCategory.OFFICE_VIEWER -> OfficeViewerSettings(
                 modifier = Modifier.padding(padding),
@@ -106,15 +144,44 @@ fun SettingsScreen(
 private fun SettingsRoot(
     modifier: Modifier = Modifier,
     officeViewerPref: OfficeViewerType,
-    onCategoryClick: (SettingsCategory) -> Unit
+    onCategoryClick: (SettingsCategory) -> Unit,
+    appLockEnabled: Boolean,
+    onAppLockChange: (Boolean) -> Unit,
+    mediaAutoUploadEnabled: Boolean,
+    mediaSubfolder: String,
+    accounts: List<AccountProfile>
 ) {
     val s = LocalStrings.current
     Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        SettingsCategoryRow(
+            title = "Accounts",
+            subtitle = if (accounts.size == 1) accounts.first().label else "${accounts.size} configured accounts",
+            onClick = { onCategoryClick(SettingsCategory.ACCOUNTS) }
+        )
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        SettingsCategoryRow(
+            title = "Automatic media upload",
+            subtitle = if (mediaAutoUploadEnabled) "Active · Destination: /$mediaSubfolder" else "Disabled",
+            onClick = { onCategoryClick(SettingsCategory.AUTO_UPLOAD) }
+        )
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
         SettingsCategoryRow(
             title = s.officeViewerSection,
             subtitle = if (officeViewerPref == OfficeViewerType.POI) s.officeViewerPoi else s.officeViewerOnline,
             onClick = { onCategoryClick(SettingsCategory.OFFICE_VIEWER) }
         )
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("App lock", style = MaterialTheme.typography.bodyLarge)
+                Text("Require biometrics or the device lock to open the app", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = appLockEnabled, onCheckedChange = onAppLockChange)
+        }
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
         SettingsCategoryRow(
             title = s.navBarSection,
@@ -127,6 +194,95 @@ private fun SettingsRoot(
             subtitle = s.contactsSyncSectionDesc,
             onClick = { onCategoryClick(SettingsCategory.CONTACTS_SYNC) }
         )
+    }
+}
+
+@Composable
+private fun AccountsSettings(
+    modifier: Modifier,
+    accounts: List<AccountProfile>,
+    activeAccountId: String?,
+    onAccountSelected: (AccountProfile) -> Unit
+) {
+    Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        if (accounts.isEmpty()) {
+            Text("No saved accounts", modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            accounts.forEach { account ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { onAccountSelected(account) }.padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(selected = account.id == activeAccountId, onClick = { onAccountSelected(account) })
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(account.label, style = MaterialTheme.typography.bodyLarge)
+                        Text(account.serverUrl, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AutoUploadSettings(
+    modifier: Modifier,
+    mediaAutoUploadEnabled: Boolean,
+    onMediaAutoUploadChange: (Boolean) -> Unit,
+    mediaWifiOnly: Boolean,
+    onMediaWifiOnlyChange: (Boolean) -> Unit,
+    mediaChargingOnly: Boolean,
+    onMediaChargingOnlyChange: (Boolean) -> Unit,
+    mediaSubfolder: String,
+    onMediaSubfolderChange: (String) -> Unit
+) {
+    Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Automatic media upload", style = MaterialTheme.typography.bodyLarge)
+                Text("Scan and upload new photos and videos", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = mediaAutoUploadEnabled, onCheckedChange = onMediaAutoUploadChange)
+        }
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Upload on Wi-Fi only", style = MaterialTheme.typography.bodyLarge)
+                Text("Pause uploads when using mobile data", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = mediaWifiOnly, onCheckedChange = onMediaWifiOnlyChange, enabled = mediaAutoUploadEnabled)
+        }
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Only while charging", style = MaterialTheme.typography.bodyLarge)
+                Text("Conserve battery by uploading only when plugged in", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = mediaChargingOnly, onCheckedChange = onMediaChargingOnlyChange, enabled = mediaAutoUploadEnabled)
+        }
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text("Destination folder", style = MaterialTheme.typography.bodyLarge)
+            Text("Subfolder in your Nextcloud Files root", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = mediaSubfolder,
+                onValueChange = onMediaSubfolderChange,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = mediaAutoUploadEnabled
+            )
+        }
     }
 }
 

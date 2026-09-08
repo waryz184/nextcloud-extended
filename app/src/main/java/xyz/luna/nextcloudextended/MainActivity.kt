@@ -5,7 +5,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.provider.OpenableColumns
 import android.os.Bundle
 import android.webkit.MimeTypeMap
 import androidx.activity.ComponentActivity
@@ -20,6 +19,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -38,6 +39,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import xyz.luna.nextcloudextended.data.model.CalendarEvent
 import xyz.luna.nextcloudextended.data.model.NextcloudContact
 import xyz.luna.nextcloudextended.data.model.NextcloudFile
@@ -45,9 +47,17 @@ import xyz.luna.nextcloudextended.data.model.NextcloudNote
 import xyz.luna.nextcloudextended.data.model.NextcloudTask
 import xyz.luna.nextcloudextended.account.NextcloudAccountManager
 import xyz.luna.nextcloudextended.account.NextcloudAccounts
+import xyz.luna.nextcloudextended.account.AccountProfile
+import xyz.luna.nextcloudextended.account.AccountProfiles
 import xyz.luna.nextcloudextended.sync.AccountSetupActivity
 import xyz.luna.nextcloudextended.ui.screens.*
 import xyz.luna.nextcloudextended.ui.theme.NextcloudExtendedTheme
+import xyz.luna.nextcloudextended.upload.MediaAutoUploadReceiver
+import xyz.luna.nextcloudextended.upload.UploadRepository
+import xyz.luna.nextcloudextended.upload.DownloadRepository
+import xyz.luna.nextcloudextended.upload.OfflineCacheManager
+import xyz.luna.nextcloudextended.upload.OfflineOperationReplayer
+import xyz.luna.nextcloudextended.upload.NextcloudDatabase
 import java.io.File
 import java.util.Locale
 import java.util.UUID
@@ -60,7 +70,7 @@ val DEFAULT_PINNED_TABS = listOf(HubTab.CALENDAR, HubTab.NOTES, HubTab.FILES)
 
 fun HubTab.icon(): ImageVector = when (this) {
     HubTab.CALENDAR -> Icons.Default.DateRange
-    HubTab.TASKS -> Icons.Default.List
+    HubTab.TASKS -> Icons.AutoMirrored.Filled.List
     HubTab.NOTES -> Icons.Default.Edit
     HubTab.CONTACTS -> Icons.Default.Person
     HubTab.FILES -> Icons.Default.Folder
@@ -76,18 +86,103 @@ fun HubTab.label(s: Strings): String = when (this) {
 
 private val officeExtensions = setOf("xlsx", "xls", "docx", "pptx", "csv")
 private data class OfficeViewData(val fileName: String, val bytes: ByteArray?, val filePath: String)
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.fragment.app.FragmentActivity() {
+var incomingShareIntent by mutableStateOf<Intent?>(null)
+    var isAppLocked by mutableStateOf(false)
+    private var unlockInProgress = false
+    private var fingerprintDialog: androidx.biometric.BiometricPrompt? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        incomingShareIntent = intent.takeIf { it.action == Intent.ACTION_SEND || it.action == Intent.ACTION_SEND_MULTIPLE }
         setContent { NextcloudExtendedTheme { NextcloudHubApp() } }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        incomingShareIntent = intent.takeIf {
+            it.action == Intent.ACTION_SEND || it.action == Intent.ACTION_SEND_MULTIPLE
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (appLockEnabled()) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            isAppLocked = true
+            requestUnlock()
+        } else {
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        }
+    }
+
+    override fun onPause() {
+        if (appLockEnabled()) isAppLocked = true
+        super.onPause()
+    }
+
+fun requestUnlock() {
+        if (!isAppLocked || unlockInProgress) return
+        unlockInProgress = true
+        val authenticators = androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
+            androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        val canAuthenticate = androidx.biometric.BiometricManager.from(this).canAuthenticate(authenticators)
+        if (canAuthenticate != androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS) {
+            // Fail-closed: no usable authenticator (biometric or device credential). The current
+            // session stays locked; the user is offered to disable the lock from settings.
+            unlockInProgress = false
+            return
+        }
+        val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Unlock Nextcloud Extended")
+            .setSubtitle("Authenticate to access your files")
+            .setAllowedAuthenticators(authenticators)
+            .setConfirmationRequired(false)
+            .build()
+        val prompt = androidx.biometric.BiometricPrompt(
+            this,
+            mainExecutor,
+            object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+                    unlockInProgress = false
+                    isAppLocked = false
+                }
+
+                override fun onAuthenticationFailed() {
+                    unlockInProgress = false
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    unlockInProgress = false
+                }
+            }
+        )
+        fingerprintDialog = prompt
+        prompt.authenticate(promptInfo)
+    }
+
+    fun hasUsableUnlockMethod(): Boolean =
+        androidx.biometric.BiometricManager.from(this).canAuthenticate(
+            androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        ) == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS
+
+private fun appLockEnabled(): Boolean = runCatching {
+        val key = MasterKey.Builder(this).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
+        val prefs = EncryptedSharedPreferences.create(this, "secret_shared_prefs", key,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
+        prefs.getBoolean("app_lock_enabled", false)
+    }.getOrDefault(false)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     val context = LocalContext.current
+    val hostActivity = context as? MainActivity
     val sharedPrefs = remember {
         val mk = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
         EncryptedSharedPreferences.create(context, "secret_shared_prefs", mk,
@@ -106,6 +201,16 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     }
     LaunchedEffect(language) { vm.language = language }
     LaunchedEffect(vm.events) { CalendarWidget.update(context, vm.events) }
+    var accounts by remember { mutableStateOf(AccountProfiles.load(sharedPrefs)) }
+
+    fun saveAccount(server: String, user: String, secret: String) {
+        val existing = accounts.firstOrNull { it.serverUrl == server && it.username == user }
+        val profile = AccountProfile(existing?.id ?: UUID.randomUUID().toString(), server, user, secret)
+        AccountProfiles.save(sharedPrefs, profile)
+        sharedPrefs.edit().putString("active_account_id", profile.id).apply()
+        accounts = AccountProfiles.load(sharedPrefs)
+    }
+
     // True once the saved preferences have been read — prevents a one-frame flash of the
     // login form before the auto-login check below runs.
     var prefsLoaded by remember { mutableStateOf(false) }
@@ -115,6 +220,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         serverUrl = sharedPrefs.getString("server_url", "") ?: ""
         username = sharedPrefs.getString("username", "") ?: ""
         password = sharedPrefs.getString("password", "") ?: ""
+        accounts = AccountProfiles.load(sharedPrefs)
         vm.officeViewerPref = sharedPrefs.getString("office_viewer_pref", null)
             ?.let { runCatching { OfficeViewerType.valueOf(it) }.getOrNull() }
             ?: OfficeViewerType.POI
@@ -134,7 +240,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
             vm.autoLoginAttempted = true
             autoLoginStarted = true
             if (url != serverUrl) serverUrl = url
-            vm.connect(url, username, password) { /* credentials already stored */ }
+            vm.connect(url, username, password) { saveAccount(url, username, password) }
         }
     }
     val s = stringsFor(language)
@@ -148,6 +254,9 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     var showDeleteTaskListDialog by remember { mutableStateOf(false) }
     var showRenameFileDialog by remember { mutableStateOf(false) }
     var fileToRename by remember { mutableStateOf<NextcloudFile?>(null) }
+    var showTransferFileDialog by remember { mutableStateOf(false) }
+    var transferFile by remember { mutableStateOf<NextcloudFile?>(null) }
+    var transferIsCopy by remember { mutableStateOf(true) }
     var showAddNoteDialog by remember { mutableStateOf(false) }
     var editingNote by remember { mutableStateOf<NextcloudNote?>(null) }
     var viewingNote by remember { mutableStateOf<NextcloudNote?>(null) }
@@ -159,8 +268,28 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     var viewingContact by remember { mutableStateOf<NextcloudContact?>(null) }
     var pdfToView by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
     var officeToView by remember { mutableStateOf<OfficeViewData?>(null) }
-    var showSettings by remember { mutableStateOf(false) }
+var showSettings by remember { mutableStateOf(false) }
+    var showTransferHistory by remember { mutableStateOf(false) }
+    var showOfflineFiles by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
+    var showSharesDialog by remember { mutableStateOf(false) }
+    var shareFileForDialog by remember { mutableStateOf<NextcloudFile?>(null) }
+    var capturedPhoto by remember { mutableStateOf<File?>(null) }
+    var scannedPhoto by remember { mutableStateOf<File?>(null) }
+    var scanPages by remember { mutableStateOf<List<File>>(emptyList()) }
+    var showScanReview by remember { mutableStateOf(false) }
+var mediaAutoUploadEnabled by remember {
+        mutableStateOf(sharedPrefs.getBoolean(MediaAutoUploadReceiver.KEY_ENABLED, false))
+    }
+    var mediaWifiOnly by remember {
+        mutableStateOf(sharedPrefs.getBoolean(MediaAutoUploadReceiver.KEY_WIFI_ONLY, false))
+    }
+    var mediaChargingOnly by remember {
+        mutableStateOf(sharedPrefs.getBoolean(MediaAutoUploadReceiver.KEY_CHARGING_ONLY, false))
+    }
+    var mediaSubfolder by remember {
+        mutableStateOf(sharedPrefs.getString(MediaAutoUploadReceiver.KEY_SUBFOLDER, "InstantUpload") ?: "InstantUpload")
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -170,16 +299,77 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         LaunchedEffect(msg) { snackbarHostState.showSnackbar(msg, duration = SnackbarDuration.Short); vm.errorMessage = null }
     }
 
-    val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+    fun enqueueBackgroundUpload(uri: Uri, fileName: String) {
+        coroutineScope.launch {
+            runCatching {
+                val accountId = accounts.firstOrNull { it.serverUrl == serverUrl && it.username == username }?.id
+                    ?: throw java.io.IOException("No active account")
+                UploadRepository.enqueueUri(context, accountId, uri, vm.currentFolderPath, fileName)
+            }.onFailure { vm.errorMessage = s.uploadFailed(it.message ?: "") }
+        }
+    }
+
+    fun enqueueBackgroundFile(file: File) {
+        coroutineScope.launch {
+            runCatching {
+                val accountId = accounts.firstOrNull { it.serverUrl == serverUrl && it.username == username }?.id
+                    ?: throw java.io.IOException("No active account")
+                UploadRepository.enqueue(context, accountId, file.absolutePath, vm.currentFolderPath, file.name, file.length())
+            }.onFailure { vm.errorMessage = s.uploadFailed(it.message ?: "") }
+        }
+    }
+
+    fun makeFileAvailableOffline(file: NextcloudFile) {
+        val accountId = accounts.firstOrNull { it.serverUrl == serverUrl && it.username == username }?.id
+        if (accountId == null) {
+            vm.errorMessage = s.filesError("No active account")
+            return
+        }
+        vm.downloadFile(file.path) { bytes ->
+            coroutineScope.launch {
+                runCatching { OfflineCacheManager.cache(context, accountId, file.path, bytes) }
+                    .onFailure { vm.errorMessage = s.filesError(it.message ?: "") }
+            }
+        }
+    }
+
+fun loadFileBytes(file: NextcloudFile, onBytes: (ByteArray) -> Unit) {
+        val accountId = accounts.firstOrNull { it.serverUrl == serverUrl && it.username == username }?.id
+        coroutineScope.launch {
+            val cached = accountId?.let { id ->
+                withContext(Dispatchers.IO) { OfflineCacheManager.get(context, id, file.path)?.readBytes() }
+            }
+            if (cached != null) {
+                onBytes(cached)
+            } else {
+                // Stream to disk first so files over the in-memory preview cap still open.
+                vm.downloadFileToCache(file.name, file.path,
+                    onSuccess = { tmp ->
+                        coroutineScope.launch(Dispatchers.IO) {
+                            val bytes = runCatching { tmp.readBytes() }.getOrNull()
+                            tmp.delete()
+                            if (bytes != null) withContext(Dispatchers.Main) { onBytes(bytes) }
+                            else vm.errorMessage = s.downloadFailed("Unable to read downloaded preview")
+                        }
+                    },
+                    onFailure = { err -> vm.errorMessage = s.downloadFailed(err.message ?: "") }
+                )
+            }
+        }
+    }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
             coroutineScope.launch {
                 try {
                     val fileName = getFileNameFromUri(context, uri) ?: "upload_${System.currentTimeMillis()}"
-                    val fileSize = getFileSizeFromUri(context, uri)
-                    vm.uploadFile(fileName, fileSize) {
-                        context.contentResolver.openInputStream(uri)
-                            ?: throw java.io.IOException("Unable to open selected file")
-                    }
+                    enqueueBackgroundUpload(uri, fileName)
                 } catch (e: Exception) { vm.errorMessage = s.fileReadError(e.message ?: "") }
             }
         }
@@ -189,11 +379,15 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     // DownloadManager (notification shown on completion). Used both when tapping a file that
     // has no in-app viewer and for the explicit "Download" action in the file menu.
     fun enqueueFileDownload(file: NextcloudFile) {
-        val fileUrl = vm.client?.buildFileUrl(file.path); val auth = vm.client?.getAuthorizationHeader()
-        if (fileUrl != null && auth != null) {
-            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
-            dm.enqueue(android.app.DownloadManager.Request(Uri.parse(fileUrl)).addRequestHeader("Authorization", auth).setDestinationInExternalFilesDir(context, android.os.Environment.DIRECTORY_DOWNLOADS, file.name).setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED).setTitle(file.name).setDescription("Nextcloud Extended"))
-            coroutineScope.launch { snackbarHostState.showSnackbar(s.downloadStarted(file.name)) }
+        val accountId = accounts.firstOrNull { it.serverUrl == serverUrl && it.username == username }?.id
+        if (accountId == null) {
+            vm.errorMessage = s.downloadFailed("No active account")
+            return
+        }
+        coroutineScope.launch {
+            runCatching { DownloadRepository.enqueue(context, accountId, file.path, file.name) }
+                .onSuccess { snackbarHostState.showSnackbar(s.downloadStarted(file.name)) }
+                .onFailure { vm.errorMessage = s.downloadFailed(it.message ?: "") }
         }
     }
 
@@ -201,6 +395,13 @@ LaunchedEffect(vm.currentTab, vm.isConnected) {
         if (vm.isConnected && vm.currentTab == HubTab.FILES && vm.currentFolderPath.isEmpty() && username.isNotEmpty()) {
             vm.currentFolderPath = "/remote.php/dav/files/$username/"
             vm.refreshData()
+        }
+        if (vm.isConnected) {
+            // Replay offline file operations queued while the network was unavailable.
+            var hasMore = true
+            while (hasMore) {
+                hasMore = withContext(Dispatchers.IO) { OfflineOperationReplayer.replayNext(context) }
+            }
         }
     }
 
@@ -222,6 +423,141 @@ LaunchedEffect(vm.currentTab, vm.isConnected) {
         }
     }
 
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        val photo = capturedPhoto
+        capturedPhoto = null
+        if (saved && photo != null && photo.exists()) {
+            enqueueBackgroundFile(photo)
+        } else {
+            photo?.delete()
+        }
+    }
+
+    fun enqueueScannedPages(pages: List<File>) {
+        if (pages.isEmpty()) return
+        coroutineScope.launch(Dispatchers.IO) {
+            runCatching {
+                val pdf = File(pendingUploadDirectory(context), "scan_${System.currentTimeMillis()}.pdf")
+                val document = android.graphics.pdf.PdfDocument()
+                try {
+                    pages.forEachIndexed { index, pageFile ->
+                        val bitmap = android.graphics.BitmapFactory.decodeFile(pageFile.absolutePath)
+                            ?: throw java.io.IOException("Unable to decode scanned page")
+                        val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(
+                            bitmap.width.coerceAtLeast(1), bitmap.height.coerceAtLeast(1), index + 1
+                        ).create()
+                        val page = document.startPage(pageInfo)
+                        page.canvas.drawBitmap(bitmap, 0f, 0f, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG))
+                        document.finishPage(page)
+                        bitmap.recycle()
+                    }
+                    pdf.outputStream().use { document.writeTo(it) }
+                } finally {
+                    document.close()
+                }
+                pages.forEach { it.delete() }
+                withContext(Dispatchers.Main) {
+                    enqueueBackgroundFile(pdf)
+                    scanPages = emptyList()
+                    showScanReview = false
+                }
+            }.onFailure {
+                withContext(Dispatchers.Main) { vm.errorMessage = s.fileReadError(it.message ?: "") }
+            }
+        }
+    }
+
+    val documentScanLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        val photo = scannedPhoto
+        scannedPhoto = null
+        if (saved && photo != null && photo.exists()) {
+            scanPages = scanPages + photo
+            showScanReview = true
+        } else {
+            photo?.delete()
+        }
+    }
+
+    val mediaPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+val granted = permissions.values.all { it }
+        mediaAutoUploadEnabled = granted
+        sharedPrefs.edit().putBoolean(MediaAutoUploadReceiver.KEY_ENABLED, granted).apply()
+        if (granted) {
+            sharedPrefs.edit().putString(MediaAutoUploadReceiver.KEY_SUBFOLDER, mediaSubfolder).apply()
+            UploadRepository.schedule(context)
+            context.sendBroadcast(Intent(context, MediaAutoUploadReceiver::class.java))
+        }
+    }
+
+    fun capturePhoto() {
+        val photo = File.createTempFile("nextcloud_photo_", ".jpg", pendingUploadDirectory(context))
+        capturedPhoto = photo
+        val uri = FileProvider.getUriForFile(context, "xyz.luna.nextcloudextended.provider", photo)
+        cameraLauncher.launch(uri)
+    }
+
+    fun scanDocument() {
+        val photo = File.createTempFile("nextcloud_scan_", ".jpg", pendingUploadDirectory(context))
+        scannedPhoto = photo
+        val uri = FileProvider.getUriForFile(context, "xyz.luna.nextcloudextended.provider", photo)
+        documentScanLauncher.launch(uri)
+    }
+
+    if (showScanReview) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("Scanned pages: ${scanPages.size}") },
+            text = { Text("Add another page or upload all pages as one PDF.") },
+            confirmButton = {
+                Button(onClick = { enqueueScannedPages(scanPages) }, enabled = scanPages.isNotEmpty()) { Text("Upload PDF") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { scanDocument() }) { Text("Add page") }
+                    TextButton(onClick = { scanPages.forEach { it.delete() }; scanPages = emptyList(); showScanReview = false }) { Text(s.cancel) }
+                }
+            }
+        )
+    }
+
+    // Match the native client's "receive external files" flow. The intent is held until a
+    // session and a WebDAV folder are ready, then consumed exactly once.
+    LaunchedEffect(hostActivity?.incomingShareIntent, vm.isConnected, vm.currentFolderPath) {
+        val shareIntent = hostActivity?.incomingShareIntent ?: return@LaunchedEffect
+        if (!vm.isConnected || vm.currentFolderPath.isEmpty()) return@LaunchedEffect
+
+val uris = buildList {
+            if (shareIntent.action == Intent.ACTION_SEND) {
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    shareIntent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)?.let(::add)
+                } else {
+                    @Suppress("DEPRECATION")
+                    shareIntent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let(::add)
+                }
+            } else {
+                val extras: List<Uri>? = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    shareIntent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    shareIntent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
+                }
+                extras?.let(::addAll)
+                    ?: shareIntent.clipData?.let { clip ->
+                        for (index in 0 until clip.itemCount) add(clip.getItemAt(index).uri)
+                    }
+            }
+        }.distinct()
+        hostActivity.incomingShareIntent = null
+
+        uris.forEach { uri ->
+            val fileName = getFileNameFromUri(context, uri) ?: "shared_${System.currentTimeMillis()}"
+            runCatching { enqueueBackgroundUpload(uri, fileName) }
+                .onFailure { vm.errorMessage = s.fileReadError(it.message ?: "") }
+        }
+    }
+
     CompositionLocalProvider(LocalStrings provides s) {
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -230,12 +566,16 @@ LaunchedEffect(vm.currentTab, vm.isConnected) {
             TopAppBar(
                 title = { Text(if (!vm.isConnected) "Nextcloud Extended" else vm.currentTab.label(s)) },
                 actions = {
-                    if (vm.isConnected) {
+if (vm.isConnected) {
                         IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, s.settings) }
+                        IconButton(onClick = { showTransferHistory = true }) { Icon(Icons.Default.History, "Transfer history") }
+                        IconButton(onClick = { showOfflineFiles = true }) { Icon(Icons.Default.Download, "Available offline") }
                         IconButton(onClick = {
-                            vm.disconnect { sharedPrefs.edit().clear().apply() }
+                            vm.disconnect {
+                                sharedPrefs.edit().remove("server_url").remove("username").remove("password").apply()
+                            }
                             coroutineScope.launch { snackbarHostState.showSnackbar(s.loggedOut) }
-                        }) { Icon(Icons.Default.ExitToApp, s.logout) }
+                        }) { Icon(Icons.AutoMirrored.Filled.ExitToApp, s.logout) }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary, titleContentColor = MaterialTheme.colorScheme.onPrimary, actionIconContentColor = MaterialTheme.colorScheme.onPrimary, scrolledContainerColor = MaterialTheme.colorScheme.primary),
@@ -331,6 +671,7 @@ LaunchedEffect(vm.currentTab, vm.isConnected) {
                         if (url.isEmpty() || username.isEmpty() || password.isEmpty()) { vm.errorMessage = s.fillAllFields; return@LoginScreen }
                         if (!url.startsWith("https://", ignoreCase = true)) { vm.errorMessage = s.insecureHttpBlocked; return@LoginScreen }
                         vm.connect(url, username, password) {
+                            saveAccount(url, username, password)
                             sharedPrefs.edit().putString("server_url", url).putString("username", username).putString("password", password).remove("allow_insecure_http").apply()
                         }
                     })
@@ -355,10 +696,10 @@ LaunchedEffect(vm.currentTab, vm.isConnected) {
                                 when {
                                     file.isDirectory -> vm.navigateToFolder(file.path)
                                     file.name.endsWith(".pdf", ignoreCase = true) ->
-                                        vm.downloadFile(file.path) { bytes -> pdfToView = Pair(file.name, bytes) }
+                                        loadFileBytes(file) { bytes -> pdfToView = Pair(file.name, bytes) }
                                     ext in officeExtensions -> {
                                         if (vm.officeViewerPref == OfficeViewerType.POI) {
-                                            vm.downloadFile(file.path) { bytes ->
+                                            loadFileBytes(file) { bytes ->
                                                 officeToView = OfficeViewData(file.name, bytes, file.path)
                                             }
                                         } else {
@@ -374,10 +715,10 @@ LaunchedEffect(vm.currentTab, vm.isConnected) {
                                 val ext = file.name.substringAfterLast('.', "").lowercase()
                                 when {
                                     file.name.endsWith(".pdf", ignoreCase = true) ->
-                                        vm.downloadFile(file.path) { bytes -> pdfToView = Pair(file.name, bytes) }
+                                        loadFileBytes(file) { bytes -> pdfToView = Pair(file.name, bytes) }
                                     ext in officeExtensions -> {
                                         if (vm.officeViewerPref == OfficeViewerType.POI) {
-                                            vm.downloadFile(file.path) { bytes ->
+                                            loadFileBytes(file) { bytes ->
                                                 officeToView = OfficeViewData(file.name, bytes, file.path)
                                             }
                                         } else {
@@ -385,7 +726,7 @@ LaunchedEffect(vm.currentTab, vm.isConnected) {
                                         }
                                     }
                                     else -> {
-                                        vm.downloadFile(file.path) { bytes ->
+                                        loadFileBytes(file) { bytes ->
                                             try {
                                                 val cacheFile = File(context.cacheDir, file.name); cacheFile.writeBytes(bytes)
                                                 val uri = FileProvider.getUriForFile(context, "xyz.luna.nextcloudextended.provider", cacheFile)
@@ -396,9 +737,26 @@ LaunchedEffect(vm.currentTab, vm.isConnected) {
                                     }
                                 }
                             },
-                            onShareFile = { vm.createShareLink(it) },
+                            canShareFiles = !vm.serverCapabilities.discovered || vm.serverCapabilities.has("files_sharing"),
+                            onShareFile = {
+                                shareFileForDialog = it
+                                showSharesDialog = true
+                                vm.loadShares(it)
+                            },
                             onDownloadFile = { file -> enqueueFileDownload(file) },
-                            onBackClick = { vm.navigateUp() }, onDeleteFile = { vm.deleteFile(it.path) }, onRenameFile = { fileToRename = it; showRenameFileDialog = true }
+                            onMakeOffline = { file -> makeFileAvailableOffline(file) },
+                            onBackClick = { vm.navigateUp() }, onDeleteFile = { file ->
+                                if (vm.client == null) {
+                                    val accountId = accounts.firstOrNull { it.serverUrl == serverUrl && it.username == username }?.id
+                                    if (accountId != null) {
+                                        coroutineScope.launch { OfflineOperationReplayer.enqueueDelete(context, accountId, file.path) }
+                                    }
+                                } else {
+                                    vm.deleteFile(file.path)
+                                }
+                            }, onRenameFile = { fileToRename = it; showRenameFileDialog = true },
+                            onCopyFile = { transferFile = it; transferIsCopy = true; showTransferFileDialog = true },
+                            onMoveFile = { transferFile = it; transferIsCopy = false; showTransferFileDialog = true }
                         )
                     }
                 }
@@ -414,6 +772,23 @@ LaunchedEffect(vm.currentTab, vm.isConnected) {
             onDismiss = { detailEvent = null },
             onEdit = { editingEvent = event },
             onDelete = { vm.deleteEvent(event) }
+        )
+    }
+
+    // Conflict resolution
+    vm.conflictFile?.let { conflict ->
+        AlertDialog(
+            onDismissRequest = { vm.dismissConflict() },
+            title = { Text("File conflict") },
+            text = { Text("${conflict.fileName} was changed on the server since you last viewed it. What do you want to do?") },
+            confirmButton = {
+                Row {
+                    Button(onClick = { vm.resolveConflictOverwrite(conflict.fileName, conflict.localBytes) }) { Text("Overwrite") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(onClick = { vm.resolveConflictRename(conflict.fileName, conflict.localBytes) }) { Text("Keep both") }
+                }
+            },
+            dismissButton = { TextButton(onClick = { vm.dismissConflict() }) { Text("Skip") } }
         )
     }
 
@@ -478,7 +853,9 @@ LaunchedEffect(vm.currentTab, vm.isConnected) {
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(s.addToDrive, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
                 FilledTonalButton(onClick = { showDriveBottomSheet = false; showAddFolderDialog = true }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Folder, null); Spacer(Modifier.width(8.dp)); Text(s.createFolder) }
-                FilledTonalButton(onClick = { showDriveBottomSheet = false; filePickerLauncher.launch("*/*") }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Publish, null); Spacer(Modifier.width(8.dp)); Text(s.uploadFile) }
+                FilledTonalButton(onClick = { showDriveBottomSheet = false; filePickerLauncher.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Publish, null); Spacer(Modifier.width(8.dp)); Text(s.uploadFile) }
+                FilledTonalButton(onClick = { showDriveBottomSheet = false; capturePhoto() }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.CameraAlt, null); Spacer(Modifier.width(8.dp)); Text("Take a photo") }
+                FilledTonalButton(onClick = { showDriveBottomSheet = false; scanDocument() }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.DocumentScanner, null); Spacer(Modifier.width(8.dp)); Text("Scan document") }
             }
         }
     }
@@ -486,7 +863,64 @@ LaunchedEffect(vm.currentTab, vm.isConnected) {
     // Add folder
     if (showAddFolderDialog) { var name by remember { mutableStateOf("") }
         AlertDialog(onDismissRequest = { showAddFolderDialog = false }, title = { Text(s.newFolder) }, text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(s.folderName) }, modifier = Modifier.fillMaxWidth()) },
-            confirmButton = { Button(onClick = { if (name.isNotEmpty()) { showAddFolderDialog = false; vm.createFolder(name) } }) { Text(s.create) } }, dismissButton = { TextButton(onClick = { showAddFolderDialog = false }) { Text(s.cancel) } }) }
+            confirmButton = { Button(onClick = { if (name.isNotEmpty()) { showAddFolderDialog = false; if (vm.client == null) { val accountId = accounts.firstOrNull { it.serverUrl == serverUrl && it.username == username }?.id; if (accountId != null) coroutineScope.launch { OfflineOperationReplayer.enqueueCreateFolder(context, accountId, vm.currentFolderPath, name) } } else { vm.createFolder(name) } } }) { Text(s.create) } }, dismissButton = { TextButton(onClick = { showAddFolderDialog = false }) { Text(s.cancel) } }) }
+
+    if (showTransferFileDialog) {
+        var destination by remember(transferFile) { mutableStateOf(vm.currentFolderPath) }
+        AlertDialog(
+            onDismissRequest = { showTransferFileDialog = false },
+            title = { Text(if (transferIsCopy) "Copy to" else "Move to") },
+            text = {
+                OutlinedTextField(
+                    value = destination,
+                    onValueChange = { destination = it },
+                    label = { Text("Destination path") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val file = transferFile
+                    if (file != null && destination.isNotBlank()) {
+                        showTransferFileDialog = false
+                        vm.transferFile(file.path, destination.trimEnd('/') + "/" + file.name, transferIsCopy)
+                    }
+                }) { Text(if (transferIsCopy) "Copy" else "Move") }
+            },
+            dismissButton = { TextButton(onClick = { showTransferFileDialog = false }) { Text(s.cancel) } }
+        )
+    }
+
+    if (showSharesDialog) {
+        AlertDialog(
+            onDismissRequest = { showSharesDialog = false },
+            title = { Text("Shares") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    if (vm.isLoading && vm.shares.isEmpty()) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    } else if (vm.shares.isEmpty()) {
+                        Text("No shares for this file", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        vm.shares.forEach { share ->
+                            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(share.shareWith ?: if (share.shareType == 3) "Public link" else "Share ${share.id}")
+                                    share.expiration?.let { Text("Expires: $it", style = MaterialTheme.typography.bodySmall) }
+                                }
+                                TextButton(onClick = { vm.revokeShare(share) }) { Text("Revoke") }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { shareFileForDialog?.let(vm::createShareLink) }) { Text("Create public link") }
+            },
+            dismissButton = { TextButton(onClick = { showSharesDialog = false }) { Text(s.close) } }
+        )
+    }
 
     // Add task
     if (showAddTaskDialog) { var taskTitle by remember { mutableStateOf("") }; var taskDesc by remember { mutableStateOf("") }
@@ -528,7 +962,7 @@ LaunchedEffect(vm.currentTab, vm.isConnected) {
     // Rename file
     if (showRenameFileDialog && fileToRename != null) { var name by remember { mutableStateOf(fileToRename!!.name) }
         AlertDialog(onDismissRequest = { showRenameFileDialog = false }, title = { Text(s.renameTitle) }, text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(s.newName) }, modifier = Modifier.fillMaxWidth()) },
-            confirmButton = { Button(onClick = { if (name.isNotEmpty() && name != fileToRename!!.name) { showRenameFileDialog = false; vm.renameFile(fileToRename!!.path, name) } }) { Text(s.rename) } }, dismissButton = { TextButton(onClick = { showRenameFileDialog = false }) { Text(s.cancel) } }) }
+            confirmButton = { Button(onClick = { if (name.isNotEmpty() && name != fileToRename!!.name) { showRenameFileDialog = false; if (vm.client == null) { val accountId = accounts.firstOrNull { it.serverUrl == serverUrl && it.username == username }?.id; if (accountId != null) coroutineScope.launch { OfflineOperationReplayer.enqueueRename(context, accountId, fileToRename!!.path, name) } } else { vm.renameFile(fileToRename!!.path, name) } } }) { Text(s.rename) } }, dismissButton = { TextButton(onClick = { showRenameFileDialog = false }) { Text(s.cancel) } }) }
 
     // Add note
     if (showAddNoteDialog) { var noteTitle by remember { mutableStateOf("") }; var noteContent by remember { mutableStateOf("") }; var noteCat by remember { mutableStateOf(s.defaultCategory) }
@@ -614,18 +1048,155 @@ LaunchedEffect(vm.currentTab, vm.isConnected) {
                         vm.pinnedTabs = tabs
                         sharedPrefs.edit().putString("pinned_tabs", tabs.joinToString(",") { it.name }).apply()
                     },
+appLockEnabled = sharedPrefs.getBoolean("app_lock_enabled", false),
+                    onAppLockChange = { enabled ->
+                        if (enabled && hostActivity != null && !hostActivity.hasUsableUnlockMethod()) {
+                            vm.errorMessage = "No biometric or device lock available to secure the app"
+                            return@SettingsScreen
+                        }
+                        sharedPrefs.edit().putBoolean("app_lock_enabled", enabled).apply()
+                        if (!enabled) {
+                            hostActivity?.isAppLocked = false
+                            hostActivity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                        } else {
+                            hostActivity?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                            hostActivity?.isAppLocked = true
+                            hostActivity?.requestUnlock()
+                        }
+                    },
+mediaAutoUploadEnabled = mediaAutoUploadEnabled,
+                    onMediaAutoUploadChange = { enabled ->
+                        if (!enabled) {
+                            mediaAutoUploadEnabled = false
+                            sharedPrefs.edit().putBoolean(MediaAutoUploadReceiver.KEY_ENABLED, false).apply()
+                            MediaAutoUploadReceiver.cancelSchedule(context)
+                        } else {
+                            val permissions = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                                arrayOf(android.Manifest.permission.READ_MEDIA_IMAGES, android.Manifest.permission.READ_MEDIA_VIDEO)
+                            } else {
+                                arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                            }
+                             mediaPermissionLauncher.launch(permissions)
+                        }
+                    },
+                    mediaWifiOnly = mediaWifiOnly,
+                    onMediaWifiOnlyChange = { enabled ->
+                        mediaWifiOnly = enabled
+                        sharedPrefs.edit().putBoolean(MediaAutoUploadReceiver.KEY_WIFI_ONLY, enabled).apply()
+                        if (mediaAutoUploadEnabled) UploadRepository.schedule(context)
+                    },
+                    mediaChargingOnly = mediaChargingOnly,
+                    onMediaChargingOnlyChange = { enabled ->
+                        mediaChargingOnly = enabled
+                        sharedPrefs.edit().putBoolean(MediaAutoUploadReceiver.KEY_CHARGING_ONLY, enabled).apply()
+                        if (mediaAutoUploadEnabled) UploadRepository.schedule(context)
+                    },
+                    mediaSubfolder = mediaSubfolder,
+                    onMediaSubfolderChange = { value ->
+                        mediaSubfolder = value
+                        sharedPrefs.edit().putString(MediaAutoUploadReceiver.KEY_SUBFOLDER, value).apply()
+                    },
+                    accounts = accounts,
+                    activeAccountId = accounts.firstOrNull { it.serverUrl == serverUrl && it.username == username }?.id,
+                    onAccountSelected = { profile ->
+                        if (profile.serverUrl != serverUrl || profile.username != username) {
+                            vm.disconnect { }
+                            serverUrl = profile.serverUrl
+                            username = profile.username
+                            password = profile.password
+                            sharedPrefs.edit().putString("server_url", profile.serverUrl)
+                                .putString("username", profile.username)
+                                .putString("password", profile.password).apply()
+                            vm.connect(profile.serverUrl, profile.username, profile.password) {
+                                saveAccount(profile.serverUrl, profile.username, profile.password)
+                            }
+                        }
+                        showSettings = false
+                    },
                     onDismiss = { showSettings = false }
                 )
             }
         }
     }
-    }
+
+    if (showTransferHistory) {
+        Dialog(
+            onDismissRequest = { showTransferHistory = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true, dismissOnClickOutside = false)
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                TransferHistoryScreen(
+                    onDismiss = { showTransferHistory = false },
+                    onAction = { kind, id, action ->
+                        coroutineScope.launch(Dispatchers.IO) {
+                            val database = NextcloudDatabase.get(context)
+                            if (kind == "upload") {
+                                if (action == "retry") {
+                                    database.uploads().retry(id)
+                                    withContext(Dispatchers.Main) { UploadRepository.schedule(context) }
+                                } else {
+                                    database.uploads().cancel(id)
+                                    withContext(Dispatchers.Main) { UploadRepository.cancel(context) }
+                                }
+                            } else {
+                                if (action == "retry") {
+                                    database.downloads().retry(id)
+                                    withContext(Dispatchers.Main) { DownloadRepository.retry(context, id) }
+                                } else {
+                                    database.downloads().cancel(id)
+                                    withContext(Dispatchers.Main) { DownloadRepository.cancel(context, id) }
+                                }
+                            }
+                            withContext(Dispatchers.Main) { showTransferHistory = false }
+                        }
+                    }
+                )
+            }
+        }
 }
 
-private fun getFileSizeFromUri(context: Context, uri: Uri): Long? =
-    context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
-        if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
+    if (showOfflineFiles) {
+        Dialog(
+            onDismissRequest = { showOfflineFiles = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true, dismissOnClickOutside = false)
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                OfflineFilesScreen(
+                    accountId = accounts.firstOrNull { it.serverUrl == serverUrl && it.username == username }?.id,
+                    onDismiss = { showOfflineFiles = false }
+                )
+            }
+        }
     }
+
+    if (hostActivity?.isAppLocked == true) {
+        Dialog(
+            onDismissRequest = {},
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false
+            )
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(32.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(Icons.Default.Lock, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.height(20.dp))
+                    Text("Nextcloud Extended is locked", style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.height(12.dp))
+                    Text("Authenticate to access your account", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(24.dp))
+                    Button(onClick = { hostActivity.requestUnlock() }) { Text("Unlock") }
+                }
+            }
+        }
+    }
+    }
+}
 
 // Branded loading screen shown while reconnecting automatically with the stored credentials,
 // so the pre-filled login form doesn't flash for a second on app start.
@@ -663,3 +1234,6 @@ private fun getFileNameFromUri(context: Context, uri: Uri): String? {
     if (name == null) { name = uri.path; val cut = name?.lastIndexOf('/') ?: -1; if (cut != -1) name = name?.substring(cut + 1) }
     return name
 }
+
+private fun pendingUploadDirectory(context: Context): File =
+    File(context.filesDir, "pending-uploads").apply { mkdirs() }

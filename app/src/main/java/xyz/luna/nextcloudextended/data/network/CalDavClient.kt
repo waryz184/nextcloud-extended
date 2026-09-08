@@ -6,6 +6,7 @@ import xyz.luna.nextcloudextended.data.model.NextcloudTask
 import xyz.luna.nextcloudextended.data.model.NextcloudNote
 import xyz.luna.nextcloudextended.data.model.NextcloudFile
 import xyz.luna.nextcloudextended.data.model.NextcloudContact
+import xyz.luna.nextcloudextended.data.model.NextcloudShare
 import xyz.luna.nextcloudextended.data.model.LabeledValue
 import xyz.luna.nextcloudextended.data.model.PostalAddress
 import okhttp3.Credentials
@@ -17,12 +18,15 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.io.OutputStream
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import android.os.Handler
 import android.os.Looper
+
+class ConflictException(message: String, val serverEtag: String? = null) : Exception(message)
 
 class CalDavClient(
     private val serverUrl: String,
@@ -576,13 +580,14 @@ class CalDavClient(
         })
     }
 
-    fun uploadFile(
+fun uploadFile(
         parentHref: String,
         fileName: String,
         contentLength: Long?,
         openStream: () -> InputStream,
         onSuccess: () -> Unit,
-        onFailure: (Exception) -> Unit
+        onFailure: (Exception) -> Unit,
+        existingEtag: String? = null
     ) {
         if (!isValidDavName(fileName)) {
             runOnMain { onFailure(IllegalArgumentException("Invalid file name")) }
@@ -604,16 +609,24 @@ class CalDavClient(
                 }
             }
         }
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url("$baseUrl${encodePath("$cleanParent$fileName")}")
             .addHeader("Authorization", credentials)
             .put(requestBody)
-            .build()
 
-        client.newCall(request).enqueueTracked(object : okhttp3.Callback {
+        // If we know the server version, send If-None-Match to detect conflicts on re-upload
+        if (existingEtag != null) {
+            requestBuilder.addHeader("If-None-Match", existingEtag)
+            requestBuilder.addHeader("If-Match", existingEtag)
+        }
+
+        client.newCall(requestBuilder.build()).enqueueTracked(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
             override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
                 if (response.isSuccessful || response.code == 201 || response.code == 204) runOnMain { onSuccess() }
+                else if (response.code == 412 || response.code == 409) {
+                    runOnMain { onFailure(ConflictException("File was modified on the server", existingEtag)) }
+                }
                 else runOnMain { onFailure(Exception("HTTP Error: ${response.code}")) }
             }
         })
@@ -692,6 +705,108 @@ class CalDavClient(
             .addHeader("Overwrite", "F")
             .method("MOVE", null).build()
 
+        client.newCall(request).enqueueTracked(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                if (response.isSuccessful || response.code == 201 || response.code == 204) runOnMain { onSuccess() }
+                else runOnMain { onFailure(Exception("HTTP Error: ${response.code}")) }
+            }
+        })
+    }
+
+    fun downloadFileTo(fileHref: String, output: OutputStream, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
+        val url = "$baseUrl${encodePath(fileHref)}"
+        val request = Request.Builder().url(url).addHeader("Authorization", credentials).get().build()
+        client.newCall(request).enqueueTracked(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                runOnMain { onFailure(e) }
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                response.use {
+                    if (!it.isSuccessful) {
+                        runCatching { output.close() }
+                        runOnMain { onFailure(IOException("HTTP Error: ${it.code}")) }
+                        return
+                    }
+                    try {
+                        val body = it.body ?: throw IOException("Empty response body")
+                        body.byteStream().use { input ->
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                output.write(buffer, 0, count)
+                            }
+                            output.flush()
+                        }
+                        output.close()
+                        runOnMain { onSuccess() }
+                    } catch (error: Exception) {
+                        runCatching { output.close() }
+                        runOnMain { onFailure(error) }
+                    }
+                }
+            }
+        })
+    }
+
+    fun getShares(fileHref: String, onSuccess: (List<NextcloudShare>) -> Unit, onFailure: (Exception) -> Unit) {
+        val sharePath = fileHref.replaceFirst(Regex("/remote\\.php/dav/files/[^/]+"), "")
+        val url = "$baseUrl/ocs/v2.php/apps/files_sharing/api/v1/shares?path=${java.net.URLEncoder.encode(sharePath, "UTF-8")}&reshares=true"
+        val request = Request.Builder().url(url).addHeader("Authorization", credentials)
+            .addHeader("OCS-APIRequest", "true").addHeader("Accept", "application/json").get().build()
+        client.newCall(request).enqueueTracked(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                response.use {
+                    if (!it.isSuccessful) { runOnMain { onFailure(IOException("HTTP Error: ${it.code}")) }; return }
+                    try {
+                        val data = org.json.JSONObject(it.body?.string() ?: "")
+                            .getJSONObject("ocs").getJSONObject("data")
+                        val shares = buildList {
+                            val array = data.optJSONArray("element") ?: return@buildList
+                            for (index in 0 until array.length()) {
+                                val item = array.getJSONObject(index)
+                                add(NextcloudShare(
+                                    id = item.optString("id"),
+                                    shareType = item.optInt("share_type"),
+                                    shareWith = item.optString("share_with").takeIf { value -> value.isNotBlank() },
+                                    url = item.optString("url").takeIf { value -> value.isNotBlank() },
+                                    permissions = item.optInt("permissions"),
+                                    expiration = item.optString("expiration").takeIf { value -> value.isNotBlank() }
+                                ))
+                            }
+                        }
+                        runOnMain { onSuccess(shares) }
+                    } catch (error: Exception) { runOnMain { onFailure(error) } }
+                }
+            }
+        })
+    }
+
+    fun deleteShare(shareId: String, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
+        val url = "$baseUrl/ocs/v2.php/apps/files_sharing/api/v1/shares/$shareId"
+        val request = Request.Builder().url(url).addHeader("Authorization", credentials)
+            .addHeader("OCS-APIRequest", "true").delete().build()
+        client.newCall(request).enqueueTracked(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                if (response.isSuccessful || response.code == 204) runOnMain { onSuccess() }
+                else runOnMain { onFailure(IOException("HTTP Error: ${response.code}")) }
+            }
+        })
+    }
+
+    fun transferFile(sourceHref: String, destinationHref: String, copy: Boolean, onSuccess: () -> Unit, onFailure: (Exception) -> Unit) {
+        val method = if (copy) "COPY" else "MOVE"
+        val request = Request.Builder()
+            .url("$baseUrl${encodePath(sourceHref)}")
+            .addHeader("Authorization", credentials)
+            .addHeader("Destination", "$baseUrl${encodePath(destinationHref)}")
+            .addHeader("Overwrite", "F")
+            .method(method, null)
+            .build()
         client.newCall(request).enqueueTracked(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) { runOnMain { onFailure(e) } }
             override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
@@ -1132,6 +1247,7 @@ class CalDavClient(
         val contentLengthRegex = Regex("<d:getcontentlength>(\\d+)</d:getcontentlength>")
         val lastModifiedRegex = Regex("<d:getlastmodified>(.*?)</d:getlastmodified>")
         val isDirectoryRegex = Regex("<d:resourcetype[\\s\\S]*?<d:collection")
+        val etagRegex = Regex("<d:getetag>(.*?)</d:getetag>")
         val cleanReqPath = requestPath.trimEnd('/')
 
         for (resp in responseRegex.findAll(xml)) {
@@ -1144,7 +1260,8 @@ class CalDavClient(
             val size = contentLengthRegex.find(respStr)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
             val lastModified = lastModifiedRegex.find(respStr)?.groupValues?.get(1) ?: ""
             val isDirectory = isDirectoryRegex.containsMatchIn(respStr) || href.endsWith("/")
-            files.add(NextcloudFile(displayName, href, isDirectory, size, lastModified))
+            val etag = etagRegex.find(respStr)?.groupValues?.get(1)?.trim()?.removeSurrounding("\"")
+            files.add(NextcloudFile(displayName, href, isDirectory, size, lastModified, etag))
         }
         return files
     }

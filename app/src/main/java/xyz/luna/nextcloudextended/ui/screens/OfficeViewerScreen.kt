@@ -12,7 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -103,7 +103,7 @@ private fun PoiViewerContent(fileName: String, fileBytes: ByteArray, onDismiss: 
         topBar = {
             TopAppBar(
                 title = { Text(fileName, maxLines = 1) },
-                navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.Default.ArrowBack, s.back) } },
+                navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, s.back) } },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -146,7 +146,7 @@ private fun OnlineViewerContent(
         topBar = {
             TopAppBar(
                 title = { Text(fileName, maxLines = 1) },
-                navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.Default.ArrowBack, s.back) } },
+                navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, s.back) } },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,

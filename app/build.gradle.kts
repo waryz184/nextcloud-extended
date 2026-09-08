@@ -4,6 +4,7 @@ import java.io.FileInputStream
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.kapt")
 }
 
 // Load signing config from keystore.properties (gitignored). Absent on CI/fresh clones.
@@ -22,8 +23,8 @@ android {
         applicationId = "xyz.luna.nextcloudextended"
         minSdk = 26
         targetSdk = 35
-        versionCode = 32
-        versionName = "2.4.2"
+        versionCode = 33
+        versionName = "2.5.0"
         multiDexEnabled = true
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -63,11 +64,20 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+    sourceSets {
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    }
     buildFeatures {
         compose = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.15"
+    }
+    kapt {
+        arguments {
+            arg("room.schemaLocation", "$projectDir/schemas")
+            arg("room.incremental", "true")
+        }
     }
     packaging {
         resources {
@@ -82,6 +92,11 @@ android {
 }
 
 dependencies {
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    kapt("androidx.room:room-compiler:2.6.1")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.3")
     implementation("androidx.core:core-ktx:1.12.0")
@@ -106,6 +121,8 @@ dependencies {
     implementation("com.fasterxml:aalto-xml:1.3.2")
     
     testImplementation("junit:junit:4.13.2")
+    testImplementation("androidx.room:room-testing:2.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    androidTestImplementation("androidx.room:room-testing:2.6.1")
 }
