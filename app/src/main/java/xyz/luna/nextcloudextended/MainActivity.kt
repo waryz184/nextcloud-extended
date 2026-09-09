@@ -1,5 +1,6 @@
 package xyz.luna.nextcloudextended
 
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -358,7 +359,7 @@ fun loadFileBytes(file: NextcloudFile, onBytes: (ByteArray) -> Unit) {
         }
     }
 
-    val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+    val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
@@ -853,7 +854,14 @@ if (vm.isConnected) {
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(s.addToDrive, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
                 FilledTonalButton(onClick = { showDriveBottomSheet = false; showAddFolderDialog = true }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Folder, null); Spacer(Modifier.width(8.dp)); Text(s.createFolder) }
-                FilledTonalButton(onClick = { showDriveBottomSheet = false; filePickerLauncher.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Publish, null); Spacer(Modifier.width(8.dp)); Text(s.uploadFile) }
+                FilledTonalButton(onClick = {
+                    showDriveBottomSheet = false
+                    try {
+                        filePickerLauncher.launch("*/*")
+                    } catch (e: ActivityNotFoundException) {
+                        vm.errorMessage = s.cannotOpen(e.message ?: "No file manager found")
+                    }
+                }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Publish, null); Spacer(Modifier.width(8.dp)); Text(s.uploadFile) }
                 FilledTonalButton(onClick = { showDriveBottomSheet = false; capturePhoto() }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.CameraAlt, null); Spacer(Modifier.width(8.dp)); Text("Take a photo") }
                 FilledTonalButton(onClick = { showDriveBottomSheet = false; scanDocument() }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.DocumentScanner, null); Spacer(Modifier.width(8.dp)); Text("Scan document") }
             }
