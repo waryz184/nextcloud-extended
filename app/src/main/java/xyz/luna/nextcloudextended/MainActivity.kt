@@ -1,6 +1,5 @@
 package xyz.luna.nextcloudextended
 
-import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -858,7 +857,7 @@ if (vm.isConnected) {
                     showDriveBottomSheet = false
                     try {
                         filePickerLauncher.launch("*/*")
-                    } catch (e: ActivityNotFoundException) {
+                    } catch (e: Exception) {
                         vm.errorMessage = s.cannotOpen(e.message ?: "No file manager found")
                     }
                 }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Publish, null); Spacer(Modifier.width(8.dp)); Text(s.uploadFile) }
