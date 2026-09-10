@@ -97,15 +97,15 @@ var incomingShareIntent by mutableStateOf<Intent?>(null)
     private var unlockInProgress = false
     private var fingerprintDialog: androidx.biometric.BiometricPrompt? = null
 
-    // File picked through the legacy startActivityForResult path (fixed, low request code that
-    // bypasses the ActivityResultRegistry's request-code generation). Observed by NextcloudHubApp
-    // as Compose state so the background upload can be enqueued from the composable scope.
-    var pendingPickedFileUri: Uri? by mutableStateOf(null)
+    // Callback set by NextcloudHubApp each recomposition. Invoked directly when the user picks a
+    // file through the legacy startActivityForResult path, so the composable scope can handle the
+    // upload without depending on a Compose state observation bridge.
+    var onFilePickCompleted: ((Uri) -> Unit)? = null
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_CODE_PICK_FILE && resultCode == RESULT_OK) {
-            pendingPickedFileUri = data?.data
+        if (requestCode == REQUEST_CODE_PICK_FILE && resultCode == RESULT_OK && data?.data != null) {
+            onFilePickCompleted?.invoke(data.data!!)
         }
     }
 
@@ -437,22 +437,22 @@ fun loadFileBytes(file: NextcloudFile, onBytes: (ByteArray) -> Unit) {
         }
     }
 
-    // Consumes the file picked through the legacy startActivityForResult path above. The Activity
-    // holds the URI as Compose state so the background upload can be enqueued from this scope.
-    LaunchedEffect(hostActivity?.pendingPickedFileUri) {
-        val uri = hostActivity?.pendingPickedFileUri ?: return@LaunchedEffect
-        hostActivity.pendingPickedFileUri = null
-        if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            coroutineScope.launch {
-                try {
-                    val fileName = getFileNameFromUri(context, uri) ?: "upload_${System.currentTimeMillis()}"
-                    enqueueBackgroundUpload(uri, fileName)
-                } catch (e: Exception) { vm.errorMessage = s.fileReadError(e.message ?: "") }
-            }
+    // Bridges the file-picker result from MainActivity.onActivityResult into the composable
+    // scope. Set each recomposition — the assignment is cheap and ensures the callback uses
+    // the latest composable state (vm, accounts, snackbarHostState, etc.).
+    hostActivity?.onFilePickCompleted = { uri ->
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
+        coroutineScope.launch {
+            try {
+                val fileName = getFileNameFromUri(context, uri) ?: "upload_${System.currentTimeMillis()}"
+                enqueueBackgroundUpload(uri, fileName)
+            } catch (e: Exception) { vm.errorMessage = s.fileReadError(e.message ?: "") }
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { hostActivity?.onFilePickCompleted = null }
     }
 
     // Enqueues a file for download to the device's Downloads folder via the system
