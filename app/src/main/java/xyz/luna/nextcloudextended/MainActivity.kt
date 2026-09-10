@@ -39,7 +39,10 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import xyz.luna.nextcloudextended.data.model.CalendarEvent
@@ -316,6 +319,23 @@ var mediaAutoUploadEnabled by remember {
     val coroutineScope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
+    // Track whether WorkManager has any pending or running uploads, so we can show
+    // a progress indicator under the top bar.
+    var hasActiveUploads by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val infos = withContext(Dispatchers.Default) {
+                runCatching {
+                    WorkManager.getInstance(context)
+                        .getWorkInfosForUniqueWork(UploadRepository.UNIQUE_WORK)
+                        .get()
+                }.getOrNull().orEmpty()
+            }
+            hasActiveUploads = infos.any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED }
+            delay(2000)
+        }
+    }
+
     vm.errorMessage?.let { msg ->
         LaunchedEffect(msg) { snackbarHostState.showSnackbar(msg, duration = SnackbarDuration.Short); vm.errorMessage = null }
     }
@@ -326,7 +346,9 @@ var mediaAutoUploadEnabled by remember {
                 val accountId = accounts.firstOrNull { it.serverUrl == serverUrl && it.username == username }?.id
                     ?: throw java.io.IOException("No active account")
                 UploadRepository.enqueueUri(context, accountId, uri, vm.currentFolderPath, fileName)
-            }.onFailure { vm.errorMessage = s.uploadFailed(it.message ?: "") }
+            }
+            .onSuccess { snackbarHostState.showSnackbar(s.uploadStarted(fileName)) }
+            .onFailure { vm.errorMessage = s.uploadFailed(it.message ?: "") }
         }
     }
 
@@ -714,6 +736,9 @@ if (vm.isConnected) {
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding).background(MaterialTheme.colorScheme.background)) {
+            if (hasActiveUploads) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter))
+            }
             if (!vm.isConnected) {
                 if (!prefsLoaded || (autoLoginStarted && vm.isLoading)) {
                     AutoConnectSplash()
