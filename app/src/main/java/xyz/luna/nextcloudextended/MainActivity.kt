@@ -1,5 +1,6 @@
 package xyz.luna.nextcloudextended
 
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -33,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.app.ActivityCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.security.crypto.EncryptedSharedPreferences
@@ -91,6 +93,25 @@ var incomingShareIntent by mutableStateOf<Intent?>(null)
     var isAppLocked by mutableStateOf(false)
     private var unlockInProgress = false
     private var fingerprintDialog: androidx.biometric.BiometricPrompt? = null
+
+    // File picked through the legacy startActivityForResult path (fixed, low request code that
+    // bypasses the ActivityResultRegistry's request-code generation). Observed by NextcloudHubApp
+    // as Compose state so the background upload can be enqueued from the composable scope.
+    var pendingPickedFileUri: Uri? by mutableStateOf(null)
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_CODE_PICK_FILE && resultCode == RESULT_OK) {
+            pendingPickedFileUri = data?.data
+        }
+    }
+
+    companion object {
+        // Hard-coded and well below 0xFFFF. The Compose ActivityResultRegistry can generate
+        // request codes that overflow the framework's 16-bit limit on some WearOS/ROM builds
+        // ("can only use lower 16 bits for request code").
+        const val REQUEST_CODE_PICK_FILE = 1001
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -358,13 +379,50 @@ fun loadFileBytes(file: NextcloudFile, onBytes: (ByteArray) -> Unit) {
         }
     }
 
-    val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+    fun launchFilePicker(activity: MainActivity?) {
+        if (activity == null) {
+            vm.errorMessage = s.cannotOpen("No file manager found")
+            return
+        }
+        try {
+            ActivityCompat.startActivityForResult(
+                activity,
+                Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("*/*"))
+                },
+                MainActivity.REQUEST_CODE_PICK_FILE,
+                null
+            )
+        } catch (e: ActivityNotFoundException) {
+            // No DocumentsUI picker (WearOS, stripped OEM ROMs): fall back to GET_CONTENT.
+            try {
+                ActivityCompat.startActivityForResult(
+                    activity,
+                    Intent(Intent.ACTION_GET_CONTENT).apply {
+                        type = "*/*"
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                    },
+                    MainActivity.REQUEST_CODE_PICK_FILE,
+                    null
+                )
+            } catch (e2: Exception) {
+                vm.errorMessage = s.cannotOpen(e2.message ?: "No file manager found")
+            }
+        } catch (e: Exception) {
+            vm.errorMessage = s.cannotOpen(e.message ?: "No file manager found")
+        }
+    }
+
+    // Consumes the file picked through the legacy startActivityForResult path above. The Activity
+    // holds the URI as Compose state so the background upload can be enqueued from this scope.
+    LaunchedEffect(hostActivity?.pendingPickedFileUri) {
+        val uri = hostActivity?.pendingPickedFileUri ?: return@LaunchedEffect
+        hostActivity.pendingPickedFileUri = null
         if (uri != null) {
             runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             coroutineScope.launch {
                 try {
@@ -855,11 +913,7 @@ if (vm.isConnected) {
                 FilledTonalButton(onClick = { showDriveBottomSheet = false; showAddFolderDialog = true }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Folder, null); Spacer(Modifier.width(8.dp)); Text(s.createFolder) }
                 FilledTonalButton(onClick = {
                     showDriveBottomSheet = false
-                    try {
-                        filePickerLauncher.launch(arrayOf("*/*"))
-                    } catch (e: Exception) {
-                        vm.errorMessage = s.cannotOpen(e.message ?: "No file manager found")
-                    }
+                    launchFilePicker(hostActivity)
                 }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Publish, null); Spacer(Modifier.width(8.dp)); Text(s.uploadFile) }
                 FilledTonalButton(onClick = { showDriveBottomSheet = false; capturePhoto() }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.CameraAlt, null); Spacer(Modifier.width(8.dp)); Text("Take a photo") }
                 FilledTonalButton(onClick = { showDriveBottomSheet = false; scanDocument() }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.DocumentScanner, null); Spacer(Modifier.width(8.dp)); Text("Scan document") }
