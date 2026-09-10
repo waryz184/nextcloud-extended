@@ -358,7 +358,7 @@ fun loadFileBytes(file: NextcloudFile, onBytes: (ByteArray) -> Unit) {
         }
     }
 
-    val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+    val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
@@ -856,7 +856,7 @@ if (vm.isConnected) {
                 FilledTonalButton(onClick = {
                     showDriveBottomSheet = false
                     try {
-                        filePickerLauncher.launch("*/*")
+                        filePickerLauncher.launch(arrayOf("*/*"))
                     } catch (e: Exception) {
                         vm.errorMessage = s.cannotOpen(e.message ?: "No file manager found")
                     }
