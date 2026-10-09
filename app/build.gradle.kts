@@ -23,8 +23,8 @@ android {
         applicationId = "xyz.luna.nextcloudextended"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.2.0"
+        versionCode = 7
+        versionName = "1.2.1"
         multiDexEnabled = true
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -97,6 +97,10 @@ dependencies {
     kapt("androidx.room:room-compiler:2.6.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("androidx.biometric:biometric:1.1.0")
+    // biometric 1.1.0 drags in fragment 1.2.5, whose FragmentActivity rejects the request codes the modern
+    // Activity Result API generates ("Can only use lower 16 bits for requestCode"): every registry-based
+    // launcher (camera, document scan, permissions) crashed on Android 16. Force a version that supports it.
+    implementation("androidx.fragment:fragment:1.8.5")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.3")
     implementation("androidx.core:core-ktx:1.12.0")
