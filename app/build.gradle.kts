@@ -23,8 +23,8 @@ android {
         applicationId = "xyz.luna.nextcloudextended"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.0.4"
+        versionCode = 6
+        versionName = "1.1.0"
         multiDexEnabled = true
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -128,6 +128,11 @@ dependencies {
     implementation("com.fasterxml:aalto-xml:1.3.2")
     
     testImplementation("junit:junit:4.13.2")
+    // Real HTTP exchanges for the network layer (redirects, retries, chunked upload, resume…).
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
+    // android.jar only ships stubs for org.json on the JVM unit-test classpath.
+    testImplementation("org.json:json:20231013")
     testImplementation("androidx.room:room-testing:2.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")

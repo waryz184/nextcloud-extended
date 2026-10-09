@@ -18,7 +18,14 @@ follow your device locale on first launch.
 - Upload, download, rename, **copy and move** files; create folders.
 - **Persistent transfer queue** (Room + WorkManager) with automatic retry, progress, history,
   cancel and re-run — uploads survive process death and network loss.
-- Generate public share links, **list existing shares and revoke them** (OCS Share API).
+- **Large files**: chunked, resumable uploads (Nextcloud chunking v2) and resumable downloads written
+  straight to disk — a dropped connection continues where it stopped. A name that already exists is
+  never overwritten silently: the upload is kept as "name (2).ext".
+- **Favourites**, **trash bin** (restore / delete / empty), **file versions** (restore), and
+  **server-side search** across the whole account.
+- **Sharing**: public links with password and expiry, shares with users, groups and e-mail addresses,
+  per-share permissions, revoke.
+- **Activity** feed, **notifications** (accept / decline / dismiss) and a **storage quota** line.
 - **Make files available offline** with a per-account cache, offline file manager and reuse of the
   cache when opening documents.
 - **Offline operations queue**: deletes, renames and folder creation are replayed automatically
@@ -72,7 +79,10 @@ follow your device locale on first launch.
 - Credentials are stored **encrypted on-device** (`EncryptedSharedPreferences`, AES-256).
 - **HTTPS is enforced by default.** Plain HTTP is an opt-in in the advanced options, intended only
   for a server on a trusted local network.
-- Sign in with a regular password, a Nextcloud **app password** or by **scanning the Nextcloud login QR code**.
+- Sign in with a regular password, a Nextcloud **app password**, by **scanning the Nextcloud login QR code**,
+  or **through your browser** (login flow v2 — works with two-factor authentication, SSO and passkeys).
+- Servers with a **self-signed or private-CA certificate** are supported: the certificate fingerprint is shown
+  once, pinned if you accept, and a later *different* certificate triggers a loud warning.
 - Permissions are requested only when a feature needs them: Internet, camera, media access,
   biometrics and legacy storage on older Android versions.
 
@@ -101,11 +111,15 @@ On first launch, choose how to sign in:
 
 - **Language:** Kotlin (JVM 17)
 - **UI:** Jetpack Compose, Material 3
-- **Networking:** OkHttp — custom CalDAV / WebDAV / OCS / JSON clients
+- **Networking:** OkHttp — one shared connection pool; a blocking `DavSession` core (redirects that keep the
+  WebDAV method, retry with back-off, sub-folder installs, typed errors) under small API classes for
+  WebDAV, OCS, CalDAV/CardDAV and Notes. Protocol notes: [docs/NETWORK_AUDIT.md](docs/NETWORK_AUDIT.md),
+  feature comparison with the official app: [docs/FEATURE_AUDIT.md](docs/FEATURE_AUDIT.md)
 - **Persistence:** Room (transfer queues, offline cache, offline operations), encrypted session
   preferences (AES-256)
 - **Background:** WorkManager with network/battery constraints and unique per-account work
-- **Parsing:** native `XmlPullParser` for WebDAV multi-status responses; lightweight in-app Markdown rendering
+- **Parsing:** namespace-aware SAX for WebDAV multi-status responses; calendar and task edits are merged into
+  the stored iCalendar so reminders, attendees and unknown properties survive; lightweight in-app Markdown rendering
 - **Min SDK:** 26 (Android 8.0) · **Target SDK:** 35
 
 ---
@@ -115,6 +129,13 @@ On first launch, choose how to sign in:
 ### Prerequisites
 - JDK 17
 - Android SDK (API 26+)
+
+### Tests
+```bash
+./gradlew testDebugUnitTest
+```
+The JVM suite runs the network layer against an in-memory WebDAV server and a real TLS server — no device
+and no Nextcloud instance needed.
 
 ### Debug build
 ```bash

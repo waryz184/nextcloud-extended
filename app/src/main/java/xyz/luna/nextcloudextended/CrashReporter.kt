@@ -55,5 +55,6 @@ class NextcloudExtendedApp : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashReporter.install(this)
+        xyz.luna.nextcloudextended.data.network.NetworkBootstrap.install(this)
     }
 }

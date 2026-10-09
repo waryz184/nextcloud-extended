@@ -6,5 +6,8 @@ data class NextcloudTask(
     val description: String?,
     val status: String, // "NEEDS-ACTION", "COMPLETED", etc.
     val due: String?,
-    val calendarHref: String
+    val calendarHref: String,
+    /** Real resource path on the server (not necessarily `<uid>.ics`). */
+    val href: String = "",
+    val etag: String? = null
 )

@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import xyz.luna.nextcloudextended.AppLanguage
+import xyz.luna.nextcloudextended.LocalExtra
 import xyz.luna.nextcloudextended.LocalStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -29,9 +30,13 @@ fun LoginScreen(
     onPasswordChange: (String) -> Unit,
     onAppPasswordModeChange: (Boolean) -> Unit,
     onScanQr: () -> Unit,
-    onConnect: () -> Unit
+    onConnect: () -> Unit,
+    onBrowserLogin: () -> Unit = {},
+    browserWaiting: Boolean = false,
+    onCancelBrowserLogin: () -> Unit = {}
 ) {
     val s = LocalStrings.current
+    val x = LocalExtra.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -65,6 +70,31 @@ fun LoginScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 32.dp)
         )
+        // Recommended path: sign in in the browser (works with 2FA, SSO and passkeys).
+        OutlinedTextField(
+            value = serverUrl, onValueChange = onServerUrlChange,
+            label = { Text(s.serverUrlLabel) },
+            placeholder = { Text(s.serverUrlPlaceholder) },
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            singleLine = true
+        )
+        if (browserWaiting) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(12.dp))
+                Text(x.loginBrowserWaiting, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = onCancelBrowserLogin) { Text(s.cancel) }
+            }
+        } else {
+            Button(onClick = onBrowserLogin, modifier = Modifier.fillMaxWidth().height(50.dp), enabled = !isLoading) {
+                Text(x.loginBrowser, style = MaterialTheme.typography.titleSmall)
+            }
+            Text(x.loginBrowserHint, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
+        }
+        Text(x.loginOr, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(vertical = 8.dp))
+
         // Password vs. Nextcloud app password (generated in Settings → Security).
         val modes = listOf(false to s.loginModePassword, true to s.loginModeAppPassword)
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
@@ -94,13 +124,6 @@ fun LoginScreen(
                 Text(s.scanQrCode)
             }
         }
-        OutlinedTextField(
-            value = serverUrl, onValueChange = onServerUrlChange,
-            label = { Text(s.serverUrlLabel) },
-            placeholder = { Text(s.serverUrlPlaceholder) },
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-            singleLine = true
-        )
         OutlinedTextField(
             value = username, onValueChange = onUsernameChange,
             label = { Text(s.usernameLabel) },

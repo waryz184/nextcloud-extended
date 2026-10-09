@@ -23,12 +23,15 @@ import xyz.luna.nextcloudextended.data.model.LabeledValue
 import xyz.luna.nextcloudextended.data.model.NextcloudContact
 import xyz.luna.nextcloudextended.data.model.PostalAddress
 import xyz.luna.nextcloudextended.data.network.CalDavClient
+import xyz.luna.nextcloudextended.data.network.FailureKind
+import xyz.luna.nextcloudextended.data.network.failureKind
 import java.util.UUID
 
 class ContactSyncEngine(private val context: Context) {
     private companion object {
         private const val TAG = "ContactSync"
         private const val BATCH_SIZE = 100
+        private const val MAX_SAFE_DELETIONS = 10
     }
 
     private val resolver: ContentResolver get() = context.contentResolver
@@ -45,34 +48,45 @@ class ContactSyncEngine(private val context: Context) {
             return
         }
 
+        val client = CalDavClient(serverUrl, username, password, am.userIdOf(account).ifBlank { username })
+        if (am.userIdOf(account).isBlank()) {
+            // Accounts created before the account id was stored: resolve it once (it can differ from the login name).
+            runCatching { client.ocs.currentUser().id }.getOrNull()?.let {
+                client.useUserId(it)
+                am.setUserId(account, it)
+            }
+        }
+
+        fun fail(e: Exception, what: String) {
+            Log.e(TAG, what, e)
+            if (e.failureKind() == FailureKind.UNAUTHORIZED) syncResult.stats.numAuthExceptions++ else syncResult.stats.numIoExceptions++
+        }
+
         if (addressBookHref.isBlank()) {
             try {
-                val client = CalDavClient(serverUrl, username, password)
                 val books = client.getAddressBooksSync()
                 if (books.isEmpty()) return
                 addressBookHref = books.first().first
                 am.setAddressBook(account, books.first().first, books.first().second)
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to fetch address books", e)
-                syncResult.stats.numIoExceptions++
+                fail(e, "Failed to fetch address books")
                 return
             }
         }
-
-        val client = CalDavClient(serverUrl, username, password)
 
         // 1. Fetch server contacts
         val serverContacts: List<NextcloudContact>
         try {
             serverContacts = client.getContactsSync(addressBookHref)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to fetch contacts from server", e)
-            syncResult.stats.numIoExceptions++
+            fail(e, "Failed to fetch contacts from server")
             return
         }
 
         // 2. Load local RawContacts for this account.
         val localByUid = loadLocalContacts(account)
+        // Contacts edited on the phone since the last sync are pushed below; pulling would erase the edit.
+        val dirtyUids = getLocalDirtyRawIds(account).mapNotNull { getUidForRawId(account, it) }.toSet()
 
         // 3. Build batch: remote → local
         val ops = mutableListOf<ContentProviderOperation>()
@@ -95,7 +109,7 @@ class ContactSyncEngine(private val context: Context) {
                 addDataRows(ops, rawIndex, server, account)
                 syncResult.stats.numInserts++
             } else {
-                if (server.etag.isNotEmpty() && server.etag != local.etag) {
+                if (server.uid !in dirtyUids && server.etag.isNotEmpty() && server.etag != local.etag) {
                     val rawId = local.rawContactId
                     ops.add(
                         ContentProviderOperation.newUpdate(
@@ -127,7 +141,15 @@ class ContactSyncEngine(private val context: Context) {
             }
         }
 
-        for ((_, local) in localByUid) {
+        // Never wipe the phone's contacts because of a truncated/empty answer (proxy page, partial sync):
+        // a deletion pass that would remove everything — or most of it — is treated as "server unreachable".
+        val deletions = localByUid.values.filter { it.uid !in dirtyUids }
+        val suspicious = deletions.isNotEmpty() && (serverContacts.isEmpty() || deletions.size > MAX_SAFE_DELETIONS && deletions.size * 2 > serverUids.size + deletions.size)
+        if (suspicious) {
+            Log.w(TAG, "Skipping ${deletions.size} local deletions: server returned ${serverContacts.size} contacts")
+            syncResult.stats.numSkippedEntries += deletions.size.toLong()
+        }
+        for ((_, local) in if (suspicious) emptyMap<String, LocalContact>() else localByUid) {
             ops.add(
                 ContentProviderOperation.newDelete(
                     RawContacts.CONTENT_URI.buildUpon().appendPath(local.rawContactId.toString()).build()
@@ -356,7 +378,11 @@ class ContactSyncEngine(private val context: Context) {
                 syncResult.stats.numUpdates++
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to upload local change for rawId=$rawId", e)
-                syncResult.stats.numIoExceptions++
+                when {
+                    e is xyz.luna.nextcloudextended.data.network.ConflictException -> syncResult.stats.numConflictDetectedExceptions++
+                    e.failureKind() == FailureKind.UNAUTHORIZED -> syncResult.stats.numAuthExceptions++
+                    else -> syncResult.stats.numIoExceptions++
+                }
             }
         }
     }

@@ -18,6 +18,23 @@ object OfflineCacheManager {
             entity
         }
 
+    /** Adopts an already downloaded file (moved, not copied) as the offline copy of [remotePath]. */
+    suspend fun cacheFile(context: Context, accountId: String, remotePath: String, source: File): OfflineFileEntity =
+        withContext(Dispatchers.IO) {
+            require(accountId.isNotBlank()) { "No active account" }
+            val directory = File(context.filesDir, "offline/$accountId").apply { mkdirs() }
+            val file = File(directory, sha256(remotePath))
+            try {
+                java.nio.file.Files.move(source.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            } catch (e: java.io.IOException) {
+                source.copyTo(file, overwrite = true)
+                source.delete()
+            }
+            val entity = OfflineFileEntity(accountId, remotePath, file.absolutePath, file.length())
+            NextcloudDatabase.get(context).offlineFiles().upsert(entity)
+            entity
+        }
+
     suspend fun get(context: Context, accountId: String, remotePath: String): File? =
         withContext(Dispatchers.IO) {
             val entity = NextcloudDatabase.get(context).offlineFiles().find(accountId, remotePath) ?: return@withContext null

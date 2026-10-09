@@ -41,6 +41,7 @@ import kotlinx.coroutines.withContext
 import xyz.luna.nextcloudextended.AppLanguage
 import xyz.luna.nextcloudextended.LocalStrings
 import xyz.luna.nextcloudextended.Strings
+import xyz.luna.nextcloudextended.extraFor
 import xyz.luna.nextcloudextended.account.NextcloudAccountManager
 import xyz.luna.nextcloudextended.account.NextcloudAccounts
 import xyz.luna.nextcloudextended.account.normalizeServerUrl
@@ -152,6 +153,7 @@ private fun AccountSetupScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var verifying by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
+    var resolvedUserId by remember { mutableStateOf("") }
 
     // Snackbar
     val snackbarHostState = remember { SnackbarHostState() }
@@ -162,7 +164,7 @@ private fun AccountSetupScreen(
         scope.launch {
             try {
                 val url = normalizeServerUrl(serverUrl)
-                val account = am.createAccount(url, username, password, href, name)
+                val account = am.createAccount(url, username, password, href, name, resolvedUserId.ifBlank { username })
                 if (account != null) {
                     ContentResolver.setIsSyncable(account, NextcloudAccounts.CONTACTS_AUTHORITY, 1)
                     ContentResolver.setSyncAutomatically(account, NextcloudAccounts.CONTACTS_AUTHORITY, true)
@@ -337,23 +339,31 @@ private fun AccountSetupScreen(
                         verifying = true
                         errorMessage = null
                         scope.launch {
-                            val books = withContext(Dispatchers.IO) {
+                            val outcome = withContext(Dispatchers.IO) {
                                 try {
                                     val client = CalDavClient(url, username, password)
-                                    client.getAddressBooksSync()
+                                    // The account id (not the login name) is what the DAV paths use.
+                                    val id = try { client.ocs.currentUser().id } catch (e: xyz.luna.nextcloudextended.data.network.HttpStatusException) {
+                                        if (e.code == 401) throw e else username
+                                    } catch (e: xyz.luna.nextcloudextended.data.network.UnexpectedResponseException) { username }
+                                    client.useUserId(id)
+                                    id to client.getAddressBooksSync()
                                 } catch (e: Exception) {
-                                    null
+                                    e
                                 }
                             }
                             verifying = false
-                            if (books != null) {
+                            if (outcome is Pair<*, *>) {
+                                @Suppress("UNCHECKED_CAST")
+                                val books = outcome.second as List<Pair<String, String>>
+                                resolvedUserId = outcome.first as String
                                 if (books.isEmpty()) {
                                     errorMessage = s.noAddressBookAvailable
                                 } else {
                                     step = SetupStep.AddressBook(books)
                                 }
                             } else {
-                                errorMessage = s.accountSetupFailed("Connection failed")
+                                errorMessage = s.accountSetupFailed(extraFor(language).describe(outcome as Throwable))
                             }
                         }
                     },

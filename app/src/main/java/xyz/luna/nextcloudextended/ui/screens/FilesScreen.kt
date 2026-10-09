@@ -18,7 +18,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import xyz.luna.nextcloudextended.LocalExtra
 import xyz.luna.nextcloudextended.LocalStrings
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import xyz.luna.nextcloudextended.data.model.NextcloudFile
 
 @Composable
@@ -35,21 +39,40 @@ fun FilesScreen(
     onDeleteFile: (NextcloudFile) -> Unit,
     onRenameFile: (NextcloudFile) -> Unit
     , onCopyFile: (NextcloudFile) -> Unit
-    , onMoveFile: (NextcloudFile) -> Unit
+    , onMoveFile: (NextcloudFile) -> Unit,
+    filesRoot: String = "",
+    storageLine: String? = null,
+    canShowVersions: Boolean = false,
+    onToggleFavorite: (NextcloudFile) -> Unit = {},
+    onShowVersions: (NextcloudFile) -> Unit = {},
+    serverResults: List<NextcloudFile>? = null,
+    serverResultsLabel: String? = null,
+    onServerSearch: (String) -> Unit = {},
+    onClearServerSearch: () -> Unit = {}
 ) {
     val s = LocalStrings.current
     var searchQuery by remember { mutableStateOf("") }
 
-    val filteredFiles = remember(files, searchQuery) {
-        if (searchQuery.isBlank()) files
+    val filteredFiles = remember(files, searchQuery, serverResults) {
+        serverResults ?: if (searchQuery.isBlank()) files
         else files.filter { it.name.contains(searchQuery, ignoreCase = true) }
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        val decoded = remember(currentFolderPath) {
-            try { java.net.URLDecoder.decode(currentFolderPath, "UTF-8") } catch (e: Exception) { currentFolderPath }
+        // Paths are kept decoded everywhere; decoding them again used to corrupt names containing '+' or '%'.
+        val isSubfolder = remember(currentFolderPath, filesRoot) {
+            filesRoot.isNotEmpty() && currentFolderPath.trimEnd('/').length > filesRoot.trimEnd('/').length
         }
-        val isSubfolder = decoded.count { it == '/' } > 5
+        if (serverResults != null) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(serverResultsLabel.orEmpty(), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                IconButton(onClick = { searchQuery = ""; onClearServerSearch() }) { Icon(Icons.Default.Clear, null) }
+            }
+        }
+        storageLine?.let {
+            Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp))
+        }
 
         if (isSubfolder) {
             // Keep the back action and search field in one control for nested folders.
@@ -74,12 +97,14 @@ fun FilesScreen(
                 VerticalDivider(modifier = Modifier.height(32.dp))
                 OutlinedTextField(
                     value = searchQuery,
-                    onValueChange = { searchQuery = it },
+                    onValueChange = { searchQuery = it; if (it.isEmpty()) onClearServerSearch() },
                     placeholder = { Text(s.searchInFolder) },
                     leadingIcon = { Icon(Icons.Default.Search, null) },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { if (searchQuery.length >= 2) onServerSearch(searchQuery) }),
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Clear, null) }
+                            IconButton(onClick = { searchQuery = ""; onClearServerSearch() }) { Icon(Icons.Default.Clear, null) }
                         }
                     },
                     modifier = Modifier
@@ -96,10 +121,12 @@ fun FilesScreen(
         } else {
             // At the Drive root, the search field remains full width.
             OutlinedTextField(
-                value = searchQuery, onValueChange = { searchQuery = it },
+                value = searchQuery, onValueChange = { searchQuery = it; if (it.isEmpty()) onClearServerSearch() },
                 placeholder = { Text(s.searchInFolder) },
                 leadingIcon = { Icon(Icons.Default.Search, null) },
-                trailingIcon = { if (searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Clear, null) } },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { if (searchQuery.length >= 2) onServerSearch(searchQuery) }),
+                trailingIcon = { if (searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = ""; onClearServerSearch() }) { Icon(Icons.Default.Clear, null) } },
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                 singleLine = true, shape = RoundedCornerShape(12.dp)
             )
@@ -124,7 +151,10 @@ fun FilesScreen(
                         onRename = { onRenameFile(file) },
                         onCopy = { onCopyFile(file) },
                         onMove = { onMoveFile(file) },
-                        onDelete = { onDeleteFile(file) }
+                        onDelete = { onDeleteFile(file) },
+                        onToggleFavorite = { onToggleFavorite(file) },
+                        canShowVersions = canShowVersions && !file.isDirectory && file.fileId != null,
+                        onShowVersions = { onShowVersions(file) }
                     )
                 }
             }
@@ -144,9 +174,13 @@ fun FileItem(
     onRename: () -> Unit,
     onCopy: () -> Unit,
     onMove: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onToggleFavorite: () -> Unit = {},
+    canShowVersions: Boolean = false,
+    onShowVersions: () -> Unit = {}
 ) {
     val s = LocalStrings.current
+    val x = LocalExtra.current
     var menuExpanded by remember { mutableStateOf(false) }
 
     Card(modifier = Modifier.fillMaxWidth().clickable { onClick() }, shape = RoundedCornerShape(12.dp)) {
@@ -166,7 +200,10 @@ fun FileItem(
             }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(file.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(file.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f, fill = false))
+                    if (file.favorite) { Spacer(Modifier.width(6.dp)); FavoriteBadge() }
+                }
                 if (!file.isDirectory) {
                     val sizeStr = remember(file.size, s) {
                         val kb = file.size / 1024.0
@@ -204,6 +241,18 @@ fun FileItem(
                             text = { Text("Available offline") },
                             leadingIcon = { Icon(Icons.Default.CloudDownload, null, tint = MaterialTheme.colorScheme.primary) },
                             onClick = { menuExpanded = false; onMakeOffline() }
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text(if (file.favorite) x.unfavorite else x.favorite) },
+                        leadingIcon = { Icon(if (file.favorite) Icons.Default.StarBorder else Icons.Default.Star, null, tint = MaterialTheme.colorScheme.tertiary) },
+                        onClick = { menuExpanded = false; onToggleFavorite() }
+                    )
+                    if (canShowVersions) {
+                        DropdownMenuItem(
+                            text = { Text(x.versions) },
+                            leadingIcon = { Icon(Icons.Default.History, null) },
+                            onClick = { menuExpanded = false; onShowVersions() }
                         )
                     }
                     DropdownMenuItem(

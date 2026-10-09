@@ -34,29 +34,32 @@ class RoomMigrationTest {
     }
 
     @Test
-    fun migrate1To5PreservesUploads() {
+    fun migrate1To6PreservesUploads() {
         helper.createDatabase("test-db", 1).apply {
             execSQL("INSERT INTO upload_operations (id, source, parent, name, length, state, attempts, lastError, createdAt) " +
                 "VALUES (NULL, '/tmp/a.txt', '/remote.php/dav/files/u/', 'a.txt', 3, 'QUEUED', 0, NULL, 1000)")
         }.close()
 
-        val database = helper.runMigrationsAndValidate("test-db", 5, true, *NextcloudDatabase.MIGRATIONS)
+        val database = helper.runMigrationsAndValidate("test-db", 6, true, *NextcloudDatabase.MIGRATIONS)
 
-        database.query("SELECT source, name FROM upload_operations").use { cursor ->
+        database.query("SELECT source, name, overwrite, sourceMtime, expectedEtag FROM upload_operations").use { cursor ->
             check(cursor.moveToFirst()) { "Expected the migrated upload row" }
             check(cursor.getString(0) == "/tmp/a.txt") { "Unexpected source" }
             check(cursor.getString(1) == "a.txt") { "Unexpected name" }
+            // Rows queued before the upgrade keep the behaviour they were queued with: overwrite.
+            check(cursor.getInt(2) == 1) { "Legacy rows must keep overwrite semantics" }
+            check(cursor.isNull(3) && cursor.isNull(4)) { "New nullable columns must start empty" }
         }
         database.close()
     }
 
     @Test
-    fun migrate2To5AddsOfflineTables() {
+    fun migrate2To6AddsOfflineTables() {
         helper.createDatabase("test-db2", 2).apply {
             execSQL("ALTER TABLE upload_operations ADD COLUMN accountId TEXT NOT NULL DEFAULT ''")
         }.close()
 
-        val database = helper.runMigrationsAndValidate("test-db2", 5, true, *NextcloudDatabase.MIGRATIONS)
+        val database = helper.runMigrationsAndValidate("test-db2", 6, true, *NextcloudDatabase.MIGRATIONS)
 
         database.query("SELECT name FROM sqlite_master WHERE type='table'").use { cursor ->
             val names = buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }

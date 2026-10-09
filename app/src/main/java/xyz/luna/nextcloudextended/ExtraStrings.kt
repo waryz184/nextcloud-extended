@@ -1,0 +1,293 @@
+package xyz.luna.nextcloudextended
+
+import androidx.compose.runtime.compositionLocalOf
+import xyz.luna.nextcloudextended.data.network.FailureKind
+import xyz.luna.nextcloudextended.data.network.HttpStatusException
+import xyz.luna.nextcloudextended.data.network.failureKind
+
+/**
+ * Strings added after the original [Strings] table: network error explanations and the screens that
+ * mirror the official Nextcloud client (trash, versions, activity, notifications, sharing, browser
+ * login…). Kept separate so the legacy table is not touched for every new screen.
+ */
+class ExtraStrings(
+    // ── Errors ──
+    val errUnauthorized: String,
+    val errForbidden: String,
+    val errNotFound: String,
+    val errConflict: String,
+    val errPrecondition: String,
+    val errLocked: String,
+    val errQuota: String,
+    val errTooLarge: String,
+    val errMaintenance: String,
+    val errRateLimited: String,
+    val errServer: (Int) -> String,
+    val errNoNetwork: String,
+    val errHostUnreachable: String,
+    val errTimeout: String,
+    val errTls: String,
+    val errInsecureRedirect: String,
+    val errUnexpectedResponse: String,
+    val errUntrustedDomain: (String) -> String,
+    val errNotNextcloud: String,
+    val errCancelled: String,
+    // ── Browser login (Login Flow v2) ──
+    val loginBrowser: String,
+    val loginBrowserWaiting: String,
+    val loginBrowserHint: String,
+    val loginBrowserFailed: String,
+    val loginOr: String,
+    // ── Favorites / trash / versions ──
+    val favorite: String,
+    val unfavorite: String,
+    val trash: String,
+    val trashEmpty: String,
+    val trashRestore: String,
+    val trashDeleteForever: String,
+    val trashEmptyAll: String,
+    val trashEmptyConfirm: String,
+    val trashRestored: String,
+    val trashDeletedAt: (String) -> String,
+    val versions: String,
+    val versionsNone: String,
+    val versionRestore: String,
+    val versionRestored: String,
+    // ── Activity / notifications ──
+    val activity: String,
+    val activityNone: String,
+    val notifications: String,
+    val notificationsNone: String,
+    val notificationsClearAll: String,
+    val dismiss: String,
+    // ── Sharing ──
+    val shareWithPeople: String,
+    val shareSearchHint: String,
+    val sharePassword: String,
+    val shareExpiry: String,
+    val shareExpiryHint: String,
+    val shareCanEdit: String,
+    val shareReadOnly: String,
+    val shareCreateLink: String,
+    val shareUpdated: String,
+    val shareNoShares: String,
+    val shareHideDownload: String,
+    val shareNote: String,
+    val sharePasswordRequired: String,
+    // ── Storage / account ──
+    val storageUsed: (String, String) -> String,
+    val storageUnlimited: (String) -> String,
+    val refresh: String,
+    val filesFavorites: String,
+    val restoreOriginalNamePrompt: String,
+    // ── Transfers ──
+    val uploadConflictRenamed: (String) -> String,
+    val uploadWaitingForNetwork: String,
+    val uploadPausedQuota: String,
+    val queuedOffline: String,
+    // ── Untrusted certificate ──
+    val certTitle: String,
+    val certExplain: (String) -> String,
+    val certChanged: String,
+    val certTrust: String,
+    val certFingerprint: String,
+    val certSubject: String,
+    val certIssuer: String,
+    val certValidUntil: String,
+    val certSelfSigned: String
+) {
+    /** One line a person can act on, for any failure produced by the network layer. */
+    fun describe(error: Throwable): String {
+        val http = generateSequence(error) { it.cause }.take(6).filterIsInstance<HttpStatusException>().firstOrNull()
+        val detail = http?.davMessage?.takeIf { it.isNotBlank() }
+        val base = when (error.failureKind()) {
+            FailureKind.UNAUTHORIZED -> errUnauthorized
+            FailureKind.FORBIDDEN -> errForbidden
+            FailureKind.NOT_FOUND -> errNotFound
+            FailureKind.CONFLICT -> errConflict
+            FailureKind.PRECONDITION_FAILED -> errPrecondition
+            FailureKind.LOCKED -> errLocked
+            FailureKind.QUOTA_EXCEEDED -> errQuota
+            FailureKind.TOO_LARGE -> errTooLarge
+            FailureKind.MAINTENANCE -> errMaintenance
+            FailureKind.RATE_LIMITED -> errRateLimited
+            FailureKind.SERVER_ERROR -> errServer(http?.code ?: 500)
+            FailureKind.NO_NETWORK -> errNoNetwork
+            FailureKind.HOST_UNREACHABLE -> errHostUnreachable
+            FailureKind.TIMEOUT -> errTimeout
+            FailureKind.TLS -> errTls
+            FailureKind.INSECURE_REDIRECT -> errInsecureRedirect
+            FailureKind.UNEXPECTED_RESPONSE -> errUnexpectedResponse
+            FailureKind.CANCELLED -> errCancelled
+            FailureKind.UNTRUSTED_DOMAIN -> errUntrustedDomain((error as? xyz.luna.nextcloudextended.data.network.UntrustedDomainException)?.host ?: "")
+            FailureKind.NOT_NEXTCLOUD -> errNotNextcloud
+            FailureKind.LOCAL_IO, FailureKind.OTHER -> return error.message ?: error.javaClass.simpleName
+        }
+        return if (detail != null && detail !in base) "$base ($detail)" else base
+    }
+}
+
+val EnExtra = ExtraStrings(
+    errUnauthorized = "The server refused your credentials. Sign in again (use an app password if two-factor authentication is on).",
+    errForbidden = "You are not allowed to do this on the server.",
+    errNotFound = "Not found on the server — it may have been moved or deleted.",
+    errConflict = "The folder this belongs to does not exist on the server.",
+    errPrecondition = "This changed on the server in the meantime.",
+    errLocked = "The file is locked by someone else. Try again later.",
+    errQuota = "Your Nextcloud storage is full.",
+    errTooLarge = "The file is larger than the server accepts.",
+    errMaintenance = "The server is in maintenance mode. Try again in a few minutes.",
+    errRateLimited = "Too many requests — the server asks to slow down.",
+    errServer = { "The server had a problem (HTTP $it). Try again later." },
+    errNoNetwork = "No network connection.",
+    errHostUnreachable = "Cannot reach the server. Check the address and your connection.",
+    errTimeout = "The server took too long to answer.",
+    errTls = "The secure connection failed — the server certificate is not trusted.",
+    errInsecureRedirect = "The server tried to redirect to an insecure address. Refused.",
+    errUnexpectedResponse = "The server answered something unexpected (a proxy or login page in the way?).",
+    errUntrustedDomain = { "This address (%s) is not in the server's trusted_domains list.".format(it) },
+    errNotNextcloud = "No Nextcloud server was found at this address.",
+    errCancelled = "Cancelled.",
+    loginBrowser = "Sign in with your browser",
+    loginBrowserWaiting = "Waiting for you to finish signing in in the browser…",
+    loginBrowserHint = "Works with two-factor authentication, SSO and passkeys.",
+    loginBrowserFailed = "The browser sign-in was not completed.",
+    loginOr = "or",
+    favorite = "Add to favorites",
+    unfavorite = "Remove from favorites",
+    trash = "Deleted files",
+    trashEmpty = "The trash is empty",
+    trashRestore = "Restore",
+    trashDeleteForever = "Delete permanently",
+    trashEmptyAll = "Empty trash",
+    trashEmptyConfirm = "Permanently delete everything in the trash? This cannot be undone.",
+    trashRestored = "Restored",
+    trashDeletedAt = { "Deleted $it" },
+    versions = "Versions",
+    versionsNone = "No earlier versions",
+    versionRestore = "Restore this version",
+    versionRestored = "Version restored",
+    activity = "Activity",
+    activityNone = "No recent activity",
+    notifications = "Notifications",
+    notificationsNone = "No notifications",
+    notificationsClearAll = "Clear all",
+    dismiss = "Dismiss",
+    shareWithPeople = "Share with people",
+    shareSearchHint = "Name, group or email",
+    sharePassword = "Password",
+    shareExpiry = "Expires",
+    shareExpiryHint = "YYYY-MM-DD",
+    shareCanEdit = "Can edit",
+    shareReadOnly = "Read only",
+    shareCreateLink = "Create public link",
+    shareUpdated = "Share updated",
+    shareNoShares = "Not shared yet",
+    shareHideDownload = "Hide download",
+    shareNote = "Note to recipient",
+    sharePasswordRequired = "The server requires a password on public links.",
+    storageUsed = { used, total -> "$used of $total used" },
+    storageUnlimited = { used -> "$used used" },
+    refresh = "Refresh",
+    filesFavorites = "Favorites",
+    restoreOriginalNamePrompt = "Restore to the original location",
+    uploadConflictRenamed = { "A file with that name exists — saved as $it" },
+    uploadWaitingForNetwork = "Waiting for a connection…",
+    uploadPausedQuota = "Not enough space on the server",
+    queuedOffline = "Saved — it will be sent as soon as you are back online.",
+    certTitle = "Untrusted certificate",
+    certExplain = { "The server $it presents a certificate that no public authority vouches for (typical of a home server with a self-signed certificate). Only continue if the fingerprint below matches the one on your server." },
+    certChanged = "WARNING: this server presented a DIFFERENT certificate than the one you trusted before. If you did not renew it yourself, someone may be intercepting the connection.",
+    certTrust = "Trust this certificate",
+    certFingerprint = "SHA-256 fingerprint",
+    certSubject = "Issued to",
+    certIssuer = "Issued by",
+    certValidUntil = "Valid until",
+    certSelfSigned = "Self-signed"
+)
+
+val FrExtra = ExtraStrings(
+    errUnauthorized = "Le serveur a refusé vos identifiants. Reconnectez-vous (utilisez un mot de passe d'application si la double authentification est active).",
+    errForbidden = "Vous n'avez pas le droit de faire cela sur le serveur.",
+    errNotFound = "Introuvable sur le serveur — il a peut-être été déplacé ou supprimé.",
+    errConflict = "Le dossier parent n'existe pas sur le serveur.",
+    errPrecondition = "Ceci a été modifié sur le serveur entre-temps.",
+    errLocked = "Le fichier est verrouillé par quelqu'un d'autre. Réessayez plus tard.",
+    errQuota = "Votre espace Nextcloud est plein.",
+    errTooLarge = "Le fichier dépasse la taille acceptée par le serveur.",
+    errMaintenance = "Le serveur est en mode maintenance. Réessayez dans quelques minutes.",
+    errRateLimited = "Trop de requêtes — le serveur demande de ralentir.",
+    errServer = { "Le serveur a rencontré un problème (HTTP $it). Réessayez plus tard." },
+    errNoNetwork = "Pas de connexion réseau.",
+    errHostUnreachable = "Impossible de joindre le serveur. Vérifiez l'adresse et votre connexion.",
+    errTimeout = "Le serveur a mis trop de temps à répondre.",
+    errTls = "La connexion sécurisée a échoué — le certificat du serveur n'est pas approuvé.",
+    errInsecureRedirect = "Le serveur a tenté une redirection non sécurisée. Refusée.",
+    errUnexpectedResponse = "Le serveur a répondu quelque chose d'inattendu (proxy ou page de connexion intercalée ?).",
+    errUntrustedDomain = { "Cette adresse (%s) n'est pas dans la liste trusted_domains du serveur.".format(it) },
+    errNotNextcloud = "Aucun serveur Nextcloud trouvé à cette adresse.",
+    errCancelled = "Annulé.",
+    loginBrowser = "Se connecter avec le navigateur",
+    loginBrowserWaiting = "En attente de la fin de la connexion dans le navigateur…",
+    loginBrowserHint = "Compatible double authentification, SSO et passkeys.",
+    loginBrowserFailed = "La connexion via le navigateur n'a pas abouti.",
+    loginOr = "ou",
+    favorite = "Ajouter aux favoris",
+    unfavorite = "Retirer des favoris",
+    trash = "Fichiers supprimés",
+    trashEmpty = "La corbeille est vide",
+    trashRestore = "Restaurer",
+    trashDeleteForever = "Supprimer définitivement",
+    trashEmptyAll = "Vider la corbeille",
+    trashEmptyConfirm = "Supprimer définitivement tout le contenu de la corbeille ? Cette action est irréversible.",
+    trashRestored = "Restauré",
+    trashDeletedAt = { "Supprimé $it" },
+    versions = "Versions",
+    versionsNone = "Aucune version antérieure",
+    versionRestore = "Restaurer cette version",
+    versionRestored = "Version restaurée",
+    activity = "Activité",
+    activityNone = "Aucune activité récente",
+    notifications = "Notifications",
+    notificationsNone = "Aucune notification",
+    notificationsClearAll = "Tout effacer",
+    dismiss = "Ignorer",
+    shareWithPeople = "Partager avec des personnes",
+    shareSearchHint = "Nom, groupe ou e-mail",
+    sharePassword = "Mot de passe",
+    shareExpiry = "Expire le",
+    shareExpiryHint = "AAAA-MM-JJ",
+    shareCanEdit = "Peut modifier",
+    shareReadOnly = "Lecture seule",
+    shareCreateLink = "Créer un lien public",
+    shareUpdated = "Partage mis à jour",
+    shareNoShares = "Pas encore partagé",
+    shareHideDownload = "Masquer le téléchargement",
+    shareNote = "Note pour le destinataire",
+    sharePasswordRequired = "Le serveur impose un mot de passe sur les liens publics.",
+    storageUsed = { used, total -> "$used utilisés sur $total" },
+    storageUnlimited = { used -> "$used utilisés" },
+    refresh = "Actualiser",
+    filesFavorites = "Favoris",
+    restoreOriginalNamePrompt = "Restaurer à l'emplacement d'origine",
+    uploadConflictRenamed = { "Un fichier de ce nom existe — enregistré sous $it" },
+    uploadWaitingForNetwork = "En attente d'une connexion…",
+    uploadPausedQuota = "Espace insuffisant sur le serveur",
+    queuedOffline = "Enregistré — ce sera envoyé dès que vous serez de nouveau en ligne.",
+    certTitle = "Certificat non approuvé",
+    certExplain = { "Le serveur $it présente un certificat qu'aucune autorité publique ne garantit (typique d'un serveur perso à certificat auto-signé). Continuez seulement si l'empreinte ci-dessous correspond à celle de votre serveur." },
+    certChanged = "ATTENTION : ce serveur présente un certificat DIFFÉRENT de celui que vous aviez approuvé. Si vous ne l'avez pas renouvelé vous-même, quelqu'un intercepte peut-être la connexion.",
+    certTrust = "Approuver ce certificat",
+    certFingerprint = "Empreinte SHA-256",
+    certSubject = "Délivré à",
+    certIssuer = "Délivré par",
+    certValidUntil = "Valide jusqu'au",
+    certSelfSigned = "Auto-signé"
+)
+
+fun extraFor(language: AppLanguage): ExtraStrings = when (language) {
+    AppLanguage.EN -> EnExtra
+    AppLanguage.FR -> FrExtra
+}
+
+val LocalExtra = compositionLocalOf { EnExtra }

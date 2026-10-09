@@ -16,6 +16,7 @@ object NextcloudAccounts {
     // AccountManager user-data keys (must match keys used by MainActivity login prefs).
     const val KEY_SERVER_URL = "server_url"
     const val KEY_USERNAME = "username"
+    const val KEY_USER_ID = "user_id"
     const val KEY_ADDRESS_BOOK_HREF = "address_book_href"
     const val KEY_ADDRESS_BOOK_NAME = "address_book_name"
 
@@ -52,12 +53,14 @@ class NextcloudAccountManager(context: Context) {
         username: String,
         password: String,
         addressBookHref: String,
-        addressBookName: String
+        addressBookName: String,
+        userId: String = username
     ): Account? {
         val account = Account(accountName(serverUrl, username), NextcloudAccounts.ACCOUNT_TYPE)
         if (!manager.addAccountExplicitly(account, password, null)) return null
         manager.setUserData(account, NextcloudAccounts.KEY_SERVER_URL, normalizeServerUrl(serverUrl))
         manager.setUserData(account, NextcloudAccounts.KEY_USERNAME, username)
+        manager.setUserData(account, NextcloudAccounts.KEY_USER_ID, userId)
         setAddressBook(account, addressBookHref, addressBookName)
         return account
     }
@@ -74,6 +77,14 @@ class NextcloudAccountManager(context: Context) {
         manager.getUserData(account, NextcloudAccounts.KEY_USERNAME) ?: ""
 
     fun passwordOf(account: Account): String = manager.getPassword(account) ?: ""
+
+    /** Server-side account id used in DAV paths; empty for accounts created before it was stored. */
+    fun userIdOf(account: Account): String =
+        manager.getUserData(account, NextcloudAccounts.KEY_USER_ID) ?: ""
+
+    fun setUserId(account: Account, userId: String) {
+        manager.setUserData(account, NextcloudAccounts.KEY_USER_ID, userId)
+    }
 
     fun addressBookHrefOf(account: Account): String =
         manager.getUserData(account, NextcloudAccounts.KEY_ADDRESS_BOOK_HREF) ?: ""

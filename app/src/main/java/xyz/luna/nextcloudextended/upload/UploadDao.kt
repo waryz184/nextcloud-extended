@@ -25,6 +25,10 @@ interface UploadDao {
     @Query("SELECT * FROM upload_operations ORDER BY createdAt DESC")
     suspend fun all(): List<UploadEntity>
 
+    /** A worker killed mid-upload leaves its row RUNNING forever; put such rows back in the queue. */
+    @Query("UPDATE upload_operations SET state = 'RETRY' WHERE state = 'RUNNING'")
+    suspend fun resetRunning()
+
     @Query("UPDATE upload_operations SET state = 'QUEUED', lastError = NULL WHERE id = :id")
     suspend fun retry(id: Long)
 

@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [UploadEntity::class, OfflineFileEntity::class, DownloadEntity::class, OfflineOperationEntity::class], version = 5, exportSchema = true)
+@Database(entities = [UploadEntity::class, OfflineFileEntity::class, DownloadEntity::class, OfflineOperationEntity::class], version = 6, exportSchema = true)
 abstract class NextcloudDatabase : RoomDatabase() {
     abstract fun uploads(): UploadDao
     abstract fun offlineFiles(): OfflineFileDao
@@ -41,7 +41,16 @@ abstract class NextcloudDatabase : RoomDatabase() {
             }
         }
 
-        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Rows queued by older versions keep their old behaviour (overwrite) and have no known mtime.
+                db.execSQL("ALTER TABLE upload_operations ADD COLUMN overwrite INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE upload_operations ADD COLUMN sourceMtime INTEGER")
+                db.execSQL("ALTER TABLE upload_operations ADD COLUMN expectedEtag TEXT")
+            }
+        }
+
+        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 
         fun get(context: Context): NextcloudDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
