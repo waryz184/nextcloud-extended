@@ -286,6 +286,40 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         }
     }
 
+    var crashReport by remember { mutableStateOf(CrashReporter.read(context)) }
+    crashReport?.let { report ->
+        AlertDialog(
+            onDismissRequest = { CrashReporter.clear(context); crashReport = null },
+            title = { Text(s.crashReportTitle) },
+            text = {
+                Column {
+                    Text(s.crashReportHint, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                    Box(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            Text(report, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("crash report", report))
+                    }) { Text(s.copy) }
+                    TextButton(onClick = {
+                        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, report)
+                        context.startActivity(Intent.createChooser(send, s.share))
+                    }) { Text(s.share) }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { CrashReporter.clear(context); crashReport = null }) { Text(s.close) }
+            }
+        )
+    }
+
     var showQrScanner by remember { mutableStateOf(false) }
     if (showQrScanner) {
         QrScannerDialog(

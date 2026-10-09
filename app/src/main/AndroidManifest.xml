@@ -24,6 +24,7 @@
         android:requiresSmallestWidthDp="0" />
 
     <application
+        android:name=".NextcloudExtendedApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
