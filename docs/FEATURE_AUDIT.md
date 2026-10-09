@@ -27,7 +27,7 @@ Legend: ✅ present · 🆕 added in this round · 🟡 partial · ❌ not imple
 | Feature | Official | Extended |
 |---|---|---|
 | Browse, create folder, rename, move, copy, delete | ✅ | ✅ |
-| Sort options, grid view | ✅ | ❌ (folders first, A→Z) |
+| Sort options, grid view | ✅ | 🆕 (6 sort orders, list/grid, remembered) |
 | Upload (picker, share-sheet, camera, document scan → PDF) | ✅ | ✅ |
 | Chunked + resumable upload for large files | ✅ | 🆕 |
 | Collision handling on upload | ✅ (ask / rename / overwrite / skip) | 🆕 keep-both by default, overwrite when saving an edited document |
@@ -39,7 +39,7 @@ Legend: ✅ present · 🆕 added in this round · 🟡 partial · ❌ not imple
 | File versions (list, restore) | ✅ | 🆕 |
 | Search by name across the account | ✅ (WebDAV SEARCH) | 🆕 |
 | Unified search (apps, mail, talk…) | ✅ | ❌ |
-| Thumbnails / previews in lists | ✅ | ❌ (endpoint wired in the DocumentsProvider only) |
+| Thumbnails / previews in lists | ✅ | 🆕 (server previews, disk + memory cache) |
 | Media gallery, albums, live photos | ✅ | ❌ |
 | Tags, comments, file locking | ✅ | ❌ |
 | Group folders / external storage | ✅ | ✅ (they are ordinary folders over WebDAV) |
@@ -73,6 +73,14 @@ Legend: ✅ present · 🆕 added in this round · 🟡 partial · ❌ not imple
 | Calendar: backup/import | ✅ | ❌ (own calendar + widgets instead) |
 | Notes, Tasks, Calendar apps | ❌ (delegates to other apps) | ✅ built-in (Extended-only) |
 
+## Look and feel
+
+Extended now follows the official client's layout (taken from its decoded resources): white app bar with
+hamburger / back arrow and a search action, a navigation drawer (account header with quota, files, favourites,
+activity, uploads, offline, deleted files, settings), a labelled bottom bar, a primary-blue FAB, 56 dp file rows
+with type-coloured icons or thumbnails, a sort/grid bar, and a bottom sheet of file actions. Nextcloud blue
+(#0082C9) replaces the wallpaper-based colours.
+
 ## What this round added to Extended
 
 Browser login, server probe, certificate trust, chunked/resumable transfers, favourites, trash bin, versions,
@@ -83,7 +91,7 @@ moved onto the same layer and stopped destroying data they do not model.
 ## Candidates for a next round (largest user value first)
 
 1. Foreground notification + progress for long transfers (also lifts Android's ~10 min job limit).
-2. List thumbnails and a media gallery (the preview endpoint is already implemented).
+2. A media gallery / albums tab.
 3. Folder-level offline sync.
 4. Multi-folder auto-upload with rename rules.
 5. Tags / comments / locking, unified search.

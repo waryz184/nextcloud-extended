@@ -44,6 +44,11 @@ private val LightColorScheme = lightColorScheme(
     inversePrimary      = md_light_inversePrimary,
     surfaceTint         = md_light_surfaceTint,
     scrim               = md_light_scrim,
+    surfaceContainerLowest = md_light_surfaceContainerLowest,
+    surfaceContainerLow = md_light_surfaceContainerLow,
+    surfaceContainer    = md_light_surfaceContainer,
+    surfaceContainerHigh = md_light_surfaceContainerHigh,
+    surfaceContainerHighest = md_light_surfaceContainerHighest,
 )
 
 private val DarkColorScheme = darkColorScheme(
@@ -76,13 +81,18 @@ private val DarkColorScheme = darkColorScheme(
     inversePrimary      = md_dark_inversePrimary,
     surfaceTint         = md_dark_surfaceTint,
     scrim               = md_dark_scrim,
+    surfaceContainerLowest = md_dark_surfaceContainerLowest,
+    surfaceContainerLow = md_dark_surfaceContainerLow,
+    surfaceContainer    = md_dark_surfaceContainer,
+    surfaceContainerHigh = md_dark_surfaceContainerHigh,
+    surfaceContainerHighest = md_dark_surfaceContainerHighest,
 )
 
 @Composable
 fun NextcloudExtendedTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color (Material You) — wallpaper-based, Android 12+
-    dynamicColor: Boolean = true,
+    // The official client keeps the Nextcloud blue rather than the wallpaper colours.
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

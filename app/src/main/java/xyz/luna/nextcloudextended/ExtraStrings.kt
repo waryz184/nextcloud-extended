@@ -94,7 +94,30 @@ class ExtraStrings(
     val certSubject: String,
     val certIssuer: String,
     val certValidUntil: String,
-    val certSelfSigned: String
+    val certSelfSigned: String,
+    // ── Shell (drawer, sort bar, sheets) ──
+    val searchHint: String,
+    val sortBy: String,
+    val sortNameAsc: String,
+    val sortNameDesc: String,
+    val sortDateNewest: String,
+    val sortDateOldest: String,
+    val sortSizeBiggest: String,
+    val sortSizeSmallest: String,
+    val listView: String,
+    val gridView: String,
+    val uploadFiles: String,
+    val takePhoto: String,
+    val scanDocument: String,
+    val availableOffline: String,
+    val copyTo: String,
+    val moveTo: String,
+    val transfers: String,
+    val drawerFiles: String,
+    val drawerOthers: String,
+    val noFavorites: String,
+    val account: String,
+    val selectedSort: String
 ) {
     /** One line a person can act on, for any failure produced by the network layer. */
     fun describe(error: Throwable): String {
@@ -203,7 +226,29 @@ val EnExtra = ExtraStrings(
     certSubject = "Issued to",
     certIssuer = "Issued by",
     certValidUntil = "Valid until",
-    certSelfSigned = "Self-signed"
+    certSelfSigned = "Self-signed",
+    searchHint = "Search",
+    sortBy = "Sort by",
+    sortNameAsc = "Name (A–Z)",
+    sortNameDesc = "Name (Z–A)",
+    sortDateNewest = "Newest first",
+    sortDateOldest = "Oldest first",
+    sortSizeBiggest = "Biggest first",
+    sortSizeSmallest = "Smallest first",
+    listView = "List view",
+    gridView = "Grid view",
+    uploadFiles = "Upload files",
+    takePhoto = "Take a photo",
+    scanDocument = "Scan document",
+    availableOffline = "Available offline",
+    copyTo = "Copy to…",
+    moveTo = "Move to…",
+    transfers = "Uploads & downloads",
+    drawerFiles = "All files",
+    drawerOthers = "More",
+    noFavorites = "Nothing marked as favorite yet",
+    account = "Account",
+    selectedSort = "Sorted by"
 )
 
 val FrExtra = ExtraStrings(
@@ -282,7 +327,29 @@ val FrExtra = ExtraStrings(
     certSubject = "Délivré à",
     certIssuer = "Délivré par",
     certValidUntil = "Valide jusqu'au",
-    certSelfSigned = "Auto-signé"
+    certSelfSigned = "Auto-signé",
+    searchHint = "Rechercher",
+    sortBy = "Trier par",
+    sortNameAsc = "Nom (A–Z)",
+    sortNameDesc = "Nom (Z–A)",
+    sortDateNewest = "Plus récents d'abord",
+    sortDateOldest = "Plus anciens d'abord",
+    sortSizeBiggest = "Plus gros d'abord",
+    sortSizeSmallest = "Plus petits d'abord",
+    listView = "Vue liste",
+    gridView = "Vue grille",
+    uploadFiles = "Téléverser des fichiers",
+    takePhoto = "Prendre une photo",
+    scanDocument = "Scanner un document",
+    availableOffline = "Disponible hors ligne",
+    copyTo = "Copier vers…",
+    moveTo = "Déplacer vers…",
+    transfers = "Envois et téléchargements",
+    drawerFiles = "Tous les fichiers",
+    drawerOthers = "Plus",
+    noFavorites = "Aucun favori pour le moment",
+    account = "Compte",
+    selectedSort = "Trié par"
 )
 
 fun extraFor(language: AppLanguage): ExtraStrings = when (language) {

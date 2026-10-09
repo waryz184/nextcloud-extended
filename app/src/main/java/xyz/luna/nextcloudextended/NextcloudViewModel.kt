@@ -109,6 +109,7 @@ class NextcloudViewModel(application: Application) : AndroidViewModel(applicatio
     // Server-side file search results (null = no search active)
     var serverSearchResults by mutableStateOf<List<NextcloudFile>?>(null)
     var serverResultsLabel by mutableStateOf<String?>(null)
+    var favoritesMode by mutableStateOf(false)
 
     // Certificate the user is asked about (self-signed / private CA), and what to do once they trust it
     var untrustedCertificate by mutableStateOf<CertificateInfo?>(null)
@@ -245,6 +246,7 @@ class NextcloudViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
             HubTab.FILES -> {
+                if (favoritesMode) { showFavorites(); return }
                 if (currentFolderPath.isEmpty() && userId.isNotEmpty()) currentFolderPath = filesRoot
                 if (currentFolderPath.isNotEmpty()) {
                     val requestedPath = currentFolderPath
@@ -472,6 +474,7 @@ class NextcloudViewModel(application: Application) : AndroidViewModel(applicatio
     // ── Files ───────────────────────────────────────────────────────────────────────────────
 
     fun navigateToFolder(path: String) {
+        clearServerSearch()
         filesRequestGeneration++
         currentFolderPath = path
         refreshData()
@@ -481,6 +484,7 @@ class NextcloudViewModel(application: Application) : AndroidViewModel(applicatio
         // Paths are stored decoded. Decoding again (URLDecoder) turned a literal '+' into a space.
         val root = filesRoot.trimEnd('/')
         val current = currentFolderPath.trimEnd('/')
+        if (favoritesMode || serverSearchResults != null) { clearServerSearch(); return }
         if (current.length > root.length && current.startsWith("$root/")) {
             filesRequestGeneration++
             currentFolderPath = current.substringBeforeLast('/') + "/"
@@ -544,11 +548,12 @@ class NextcloudViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun clearServerSearch() { serverSearchResults = null; serverResultsLabel = null }
+    fun clearServerSearch() { serverSearchResults = null; serverResultsLabel = null; favoritesMode = false }
 
     fun showFavorites() {
         call({ files.favorites() }, onFailure = { err -> errorMessage = s.filesError(msg(err)) }) {
-            serverResultsLabel = x.filesFavorites
+            favoritesMode = true
+            serverResultsLabel = null
             serverSearchResults = it
         }
     }

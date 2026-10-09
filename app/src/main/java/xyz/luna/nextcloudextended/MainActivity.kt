@@ -57,6 +57,13 @@ import xyz.luna.nextcloudextended.account.AccountProfiles
 import xyz.luna.nextcloudextended.account.parseNextcloudLoginQr
 import xyz.luna.nextcloudextended.sync.AccountSetupActivity
 import xyz.luna.nextcloudextended.ui.screens.*
+import xyz.luna.nextcloudextended.ui.files.FileSort
+import xyz.luna.nextcloudextended.ui.files.ThumbnailLoader
+import xyz.luna.nextcloudextended.ui.shell.AppDrawerContent
+import xyz.luna.nextcloudextended.ui.shell.DrawerTarget
+import xyz.luna.nextcloudextended.ui.shell.NcTopBar
+import xyz.luna.nextcloudextended.ui.shell.SheetRow
+import androidx.activity.compose.BackHandler
 import xyz.luna.nextcloudextended.ui.theme.NextcloudExtendedTheme
 import xyz.luna.nextcloudextended.upload.MediaAutoUploadReceiver
 import xyz.luna.nextcloudextended.upload.UploadRepository
@@ -760,129 +767,150 @@ val uris = buildList {
         }
     }
 
+    // ── Shell state: drawer, search, sort/grid, thumbnails ──
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    var searchOpen by remember { mutableStateOf(false) }
+    var searchText by remember { mutableStateOf("") }
+    var fileSort by remember { mutableStateOf(FileSort.fromKey(sharedPrefs.getString("file_sort", null))) }
+    var gridView by remember { mutableStateOf(sharedPrefs.getBoolean("file_grid", false)) }
+    val thumbLoader = remember(vm.client) { ThumbnailLoader(context, vm.client) }
+    val inSubfolder = vm.isConnected && vm.currentTab == HubTab.FILES && vm.userId.isNotEmpty() &&
+        vm.currentFolderPath.trimEnd('/').length > vm.filesRoot.trimEnd('/').length
+    val canGoBack = vm.currentTab == HubTab.FILES && (inSubfolder || vm.favoritesMode || vm.serverSearchResults != null)
+
+    fun closeSearch() { searchOpen = false; searchText = ""; if (!vm.favoritesMode) vm.clearServerSearch() }
+    BackHandler(enabled = drawerState.isOpen || searchOpen || (vm.isConnected && canGoBack)) {
+        when {
+            drawerState.isOpen -> coroutineScope.launch { drawerState.close() }
+            searchOpen -> closeSearch()
+            else -> vm.navigateUp()
+        }
+    }
+
+    fun logout() {
+        vm.disconnect {
+            sharedPrefs.edit().remove("server_url").remove("username").remove("password").remove("user_id").apply()
+        }
+        coroutineScope.launch { snackbarHostState.showSnackbar(s.loggedOut) }
+    }
+
+    fun navigate(target: DrawerTarget) {
+        coroutineScope.launch { drawerState.close() }
+        closeSearch()
+        when (target) {
+            DrawerTarget.FILES -> { vm.clearServerSearch(); vm.currentTab = HubTab.FILES; vm.refreshData() }
+            DrawerTarget.FAVORITES -> { vm.currentTab = HubTab.FILES; vm.showFavorites() }
+            DrawerTarget.ACTIVITY -> showActivity = true
+            DrawerTarget.CALENDAR -> { vm.currentTab = HubTab.CALENDAR; vm.refreshData() }
+            DrawerTarget.TASKS -> { vm.currentTab = HubTab.TASKS; vm.refreshData() }
+            DrawerTarget.NOTES -> { vm.currentTab = HubTab.NOTES; vm.refreshData() }
+            DrawerTarget.CONTACTS -> { vm.currentTab = HubTab.CONTACTS; vm.refreshData() }
+            DrawerTarget.TRANSFERS -> showTransferHistory = true
+            DrawerTarget.OFFLINE -> showOfflineFiles = true
+            DrawerTarget.TRASH -> showTrash = true
+            DrawerTarget.SETTINGS -> showSettings = true
+            DrawerTarget.LOGOUT -> logout()
+        }
+    }
+
+    val caps = vm.serverCapabilities
+    val selectedTarget: DrawerTarget? = when (vm.currentTab) {
+        HubTab.FILES -> if (vm.favoritesMode) DrawerTarget.FAVORITES else DrawerTarget.FILES
+        HubTab.CALENDAR -> DrawerTarget.CALENDAR
+        HubTab.TASKS -> DrawerTarget.TASKS
+        HubTab.NOTES -> DrawerTarget.NOTES
+        HubTab.CONTACTS -> DrawerTarget.CONTACTS
+    }
+    val folderTitle = vm.currentFolderPath.trimEnd('/').substringAfterLast('/')
+
     CompositionLocalProvider(LocalStrings provides s, LocalExtra provides extra) {
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = vm.isConnected,
+        drawerContent = {
+            if (vm.isConnected) {
+                val info = vm.userInfo
+                AppDrawerContent(
+                    displayName = info?.displayName?.takeIf { it.isNotBlank() } ?: vm.userId.ifEmpty { username },
+                    host = runCatching { java.net.URI(serverUrl).host }.getOrNull() ?: serverUrl,
+                    quotaText = info?.let { formatQuota(it.quotaUsed, it.quotaTotal, extra) },
+                    quotaFraction = info?.takeIf { it.quotaTotal > 0 }?.let { it.quotaUsed.toFloat() / it.quotaTotal },
+                    selected = selectedTarget,
+                    showActivity = !caps.discovered || caps.has("activity"),
+                    showTrash = !caps.discovered || caps.trashbin,
+                    onSelect = ::navigate
+                )
+            }
+        }
+    ) {
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = { Text(if (!vm.isConnected) "Nextcloud Extended" else vm.currentTab.label(s)) },
-                actions = {
-if (vm.isConnected) {
-                        val caps = vm.serverCapabilities
-                        if (!caps.discovered || caps.has("notifications")) {
-                            IconButton(onClick = { showNotifications = true }) {
-                                BadgedBox(badge = { if (vm.notifications.isNotEmpty()) Badge { Text("${vm.notifications.size}") } }) {
-                                    Icon(Icons.Default.Notifications, extra.notifications)
-                                }
-                            }
-                        }
-                        Box {
-                            IconButton(onClick = { showFeatureMenu = true }) { Icon(Icons.Default.MoreVert, s.moreOptions) }
-                            DropdownMenu(expanded = showFeatureMenu, onDismissRequest = { showFeatureMenu = false }) {
-                                DropdownMenuItem(text = { Text(extra.filesFavorites) }, leadingIcon = { Icon(Icons.Default.Star, null) },
-                                    onClick = { showFeatureMenu = false; vm.currentTab = HubTab.FILES; vm.showFavorites() })
-                                if (!caps.discovered || caps.trashbin) {
-                                    DropdownMenuItem(text = { Text(extra.trash) }, leadingIcon = { Icon(Icons.Default.DeleteSweep, null) },
-                                        onClick = { showFeatureMenu = false; showTrash = true })
-                                }
-                                if (!caps.discovered || caps.has("activity")) {
-                                    DropdownMenuItem(text = { Text(extra.activity) }, leadingIcon = { Icon(Icons.Default.Bolt, null) },
-                                        onClick = { showFeatureMenu = false; showActivity = true })
-                                }
-                                vm.userInfo?.let { info ->
-                                    HorizontalDivider()
-                                    Text("${info.displayName}\n" + formatQuota(info.quotaUsed, info.quotaTotal, extra),
-                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                                }
-                            }
-                        }
-                        IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, s.settings) }
-                        IconButton(onClick = { showTransferHistory = true }) { Icon(Icons.Default.History, "Transfer history") }
-                        IconButton(onClick = { showOfflineFiles = true }) { Icon(Icons.Default.Download, "Available offline") }
-                        IconButton(onClick = {
-                            vm.disconnect {
-                                sharedPrefs.edit().remove("server_url").remove("username").remove("password").remove("user_id").apply()
-                            }
-                            coroutineScope.launch { snackbarHostState.showSnackbar(s.loggedOut) }
-                        }) { Icon(Icons.AutoMirrored.Filled.ExitToApp, s.logout) }
-                    }
+            NcTopBar(
+                title = when {
+                    !vm.isConnected -> "Nextcloud Extended"
+                    vm.currentTab != HubTab.FILES -> vm.currentTab.label(s)
+                    vm.favoritesMode -> extra.filesFavorites
+                    inSubfolder -> folderTitle
+                    else -> s.tabFiles
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary, titleContentColor = MaterialTheme.colorScheme.onPrimary, actionIconContentColor = MaterialTheme.colorScheme.onPrimary, scrolledContainerColor = MaterialTheme.colorScheme.primary),
+                connected = vm.isConnected,
+                showBack = canGoBack,
+                onNavigation = { if (canGoBack) vm.navigateUp() else coroutineScope.launch { drawerState.open() } },
+                searchEnabled = vm.currentTab == HubTab.FILES,
+                searchOpen = searchOpen,
+                searchText = searchText,
+                onSearchOpen = { searchOpen = true },
+                onSearchTextChange = { searchText = it; if (it.isEmpty() && !vm.favoritesMode) vm.clearServerSearch() },
+                onSearchSubmit = { if (searchText.trim().length >= 2) vm.searchFiles(searchText.trim()) },
+                onSearchClose = { closeSearch() },
+                notificationCount = vm.notifications.size,
+                notificationsEnabled = !caps.discovered || caps.has("notifications"),
+                onNotifications = { showNotifications = true },
                 scrollBehavior = scrollBehavior
             )
         },
         bottomBar = {
             if (vm.isConnected) {
                 val uncompletedTasks = vm.tasks.count { it.status != "COMPLETED" }
-                val overflowTabs = HubTab.entries.filter { it !in vm.pinnedTabs }
-                fun badgeFor(tab: HubTab): Int = if (tab == HubTab.TASKS) uncompletedTasks else 0
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        modifier = Modifier.weight(1f).height(64.dp),
-                        shape = RoundedCornerShape(32.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        tonalElevation = 3.dp,
-                        shadowElevation = 4.dp
-                    ) {
-                        Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                            vm.pinnedTabs.forEach { tab ->
-                                NavigationBarItem(
-                                    selected = vm.currentTab == tab,
-                                    onClick = { vm.currentTab = tab; vm.refreshData() },
-                                    label = null,
-                                    alwaysShowLabel = false,
-                                    icon = {
-                                        BadgedBox(badge = { if (badgeFor(tab) > 0) Badge { Text("${badgeFor(tab)}") } }) {
-                                            Icon(tab.icon(), tab.label(s))
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    if (overflowTabs.isNotEmpty()) Box {
-                        FilledIconButton(
-                            onClick = { showMoreMenu = true },
-                            modifier = Modifier.size(64.dp),
-                            shape = CircleShape,
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = if (vm.currentTab in overflowTabs) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
-                                contentColor = if (vm.currentTab in overflowTabs) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        ) {
-                            val overflowBadge = overflowTabs.filter { it != vm.currentTab }.sumOf { badgeFor(it) }
-                            BadgedBox(badge = { if (overflowBadge > 0) Badge { Text("$overflowBadge") } }) {
-                                Icon(Icons.Default.Add, s.moreOptions)
-                            }
-                        }
-                        DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
-                            overflowTabs.forEach { tab ->
-                                DropdownMenuItem(
-                                    text = { Text(tab.label(s)) },
-                                    leadingIcon = {
-                                        BadgedBox(badge = { if (badgeFor(tab) > 0) Badge { Text("${badgeFor(tab)}") } }) { Icon(tab.icon(), null) }
-                                    },
-                                    onClick = { vm.currentTab = tab; vm.refreshData(); showMoreMenu = false }
-                                )
-                            }
-                        }
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
+                    NavigationBarItem(
+                        selected = vm.currentTab == HubTab.FILES && !vm.favoritesMode,
+                        onClick = { closeSearch(); vm.clearServerSearch(); vm.currentTab = HubTab.FILES; vm.refreshData() },
+                        icon = { Icon(Icons.Default.Folder, null) }, label = { Text(s.tabFiles) }
+                    )
+                    NavigationBarItem(
+                        selected = vm.currentTab == HubTab.FILES && vm.favoritesMode,
+                        onClick = { closeSearch(); vm.currentTab = HubTab.FILES; vm.showFavorites() },
+                        icon = { Icon(Icons.Default.Star, null) }, label = { Text(extra.filesFavorites) }
+                    )
+                    vm.pinnedTabs.filter { it != HubTab.FILES }.forEach { tab ->
+                        NavigationBarItem(
+                            selected = vm.currentTab == tab,
+                            onClick = { closeSearch(); vm.currentTab = tab; vm.refreshData() },
+                            icon = {
+                                BadgedBox(badge = { if (tab == HubTab.TASKS && uncompletedTasks > 0) Badge { Text("$uncompletedTasks") } }) {
+                                    Icon(tab.icon(), null)
+                                }
+                            },
+                            label = { Text(tab.label(s)) }
+                        )
                     }
                 }
             }
         },
         floatingActionButton = {
-            if (vm.isConnected) when (vm.currentTab) {
-                HubTab.TASKS -> FloatingActionButton(onClick = { showAddTaskDialog = true }) { Icon(Icons.Default.Add, s.addTask) }
-                HubTab.NOTES -> FloatingActionButton(onClick = { showAddNoteDialog = true }) { Icon(Icons.Default.Add, s.createNote) }
-                HubTab.FILES -> FloatingActionButton(onClick = { showDriveBottomSheet = true }) { Icon(Icons.Default.Add, s.add) }
-                HubTab.CONTACTS -> FloatingActionButton(onClick = { showAddContactDialog = true }) { Icon(Icons.Default.Add, s.createContact) }
-                HubTab.CALENDAR -> FloatingActionButton(onClick = { showAddEventDialog = true }) { Icon(Icons.Default.Add, s.addEvent) }
+            if (vm.isConnected) {
+                val fabColors = Pair(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onPrimary)
+                when (vm.currentTab) {
+                    HubTab.TASKS -> FloatingActionButton(onClick = { showAddTaskDialog = true }, containerColor = fabColors.first, contentColor = fabColors.second) { Icon(Icons.Default.Add, s.addTask) }
+                    HubTab.NOTES -> FloatingActionButton(onClick = { showAddNoteDialog = true }, containerColor = fabColors.first, contentColor = fabColors.second) { Icon(Icons.Default.Add, s.createNote) }
+                    HubTab.FILES -> if (!vm.favoritesMode) FloatingActionButton(onClick = { showDriveBottomSheet = true }, containerColor = fabColors.first, contentColor = fabColors.second) { Icon(Icons.Default.Add, s.add) }
+                    HubTab.CONTACTS -> FloatingActionButton(onClick = { showAddContactDialog = true }, containerColor = fabColors.first, contentColor = fabColors.second) { Icon(Icons.Default.Add, s.createContact) }
+                    HubTab.CALENDAR -> FloatingActionButton(onClick = { showAddEventDialog = true }, containerColor = fabColors.first, contentColor = fabColors.second) { Icon(Icons.Default.Add, s.addEvent) }
+                }
             }
         }
     ) { padding ->
@@ -918,7 +946,17 @@ if (vm.isConnected) {
                             onContactSelected = { viewingContact = it }
                         )
                         HubTab.FILES -> FilesScreen(
-                            currentFolderPath = vm.currentFolderPath, files = vm.files,
+                            files = vm.serverSearchResults ?: vm.files,
+                            filter = if (searchOpen) searchText else "",
+                            sort = fileSort,
+                            onSortChange = { fileSort = it; sharedPrefs.edit().putString("file_sort", it.key).apply() },
+                            gridView = gridView,
+                            onGridViewChange = { gridView = it; sharedPrefs.edit().putBoolean("file_grid", it).apply() },
+                            loader = thumbLoader,
+                            resultsLabel = vm.serverResultsLabel,
+                            onClearResults = { vm.clearServerSearch(); if (vm.currentTab == HubTab.FILES) vm.refreshData() },
+                            emptyText = if (vm.favoritesMode) extra.noFavorites else s.emptyFolder,
+                            canShowVersions = vm.serverCapabilities.versioning,
                             onFileClick = { file ->
                                 val ext = file.name.substringAfterLast('.', "").lowercase()
                                 when {
@@ -968,7 +1006,7 @@ if (vm.isConnected) {
                             },
                             onDownloadFile = { file -> enqueueFileDownload(file) },
                             onMakeOffline = { file -> makeFileAvailableOffline(file) },
-                            onBackClick = { vm.navigateUp() }, onDeleteFile = { file ->
+                            onDeleteFile = { file ->
                                 if (vm.client == null) {
                                     val accountId = accounts.firstOrNull { it.serverUrl == serverUrl && it.username == username }?.id
                                     if (accountId != null) {
@@ -980,21 +1018,15 @@ if (vm.isConnected) {
                             }, onRenameFile = { fileToRename = it; showRenameFileDialog = true },
                             onCopyFile = { transferFile = it; transferIsCopy = true; showTransferFileDialog = true },
                             onMoveFile = { transferFile = it; transferIsCopy = false; showTransferFileDialog = true },
-                            filesRoot = vm.filesRoot,
-                            storageLine = vm.userInfo?.let { formatQuota(it.quotaUsed, it.quotaTotal, extra) },
-                            canShowVersions = vm.serverCapabilities.versioning,
                             onToggleFavorite = { vm.toggleFavorite(it) },
-                            onShowVersions = { vm.loadVersions(it) },
-                            serverResults = vm.serverSearchResults,
-                            serverResultsLabel = vm.serverResultsLabel,
-                            onServerSearch = { vm.searchFiles(it) },
-                            onClearServerSearch = { vm.clearServerSearch() }
+                            onShowVersions = { vm.loadVersions(it) }
                         )
                     }
                 }
             }
         }
     }
+    } // ModalNavigationDrawer
 
     // Event detail sheet
     detailEvent?.let { event ->
@@ -1108,15 +1140,11 @@ if (vm.isConnected) {
     // Drive bottom sheet
     if (showDriveBottomSheet) {
         ModalBottomSheet(onDismissRequest = { showDriveBottomSheet = false }) {
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(s.addToDrive, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
-                FilledTonalButton(onClick = { showDriveBottomSheet = false; showAddFolderDialog = true }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Folder, null); Spacer(Modifier.width(8.dp)); Text(s.createFolder) }
-                FilledTonalButton(onClick = {
-                    showDriveBottomSheet = false
-                    launchFilePicker(hostActivity)
-                }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Publish, null); Spacer(Modifier.width(8.dp)); Text(s.uploadFile) }
-                FilledTonalButton(onClick = { showDriveBottomSheet = false; capturePhoto() }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.CameraAlt, null); Spacer(Modifier.width(8.dp)); Text("Take a photo") }
-                FilledTonalButton(onClick = { showDriveBottomSheet = false; scanDocument() }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.DocumentScanner, null); Spacer(Modifier.width(8.dp)); Text("Scan document") }
+            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp)) {
+                SheetRow(Icons.Default.Publish, extra.uploadFiles) { showDriveBottomSheet = false; launchFilePicker(hostActivity) }
+                SheetRow(Icons.Default.CameraAlt, extra.takePhoto) { showDriveBottomSheet = false; capturePhoto() }
+                SheetRow(Icons.Default.DocumentScanner, extra.scanDocument) { showDriveBottomSheet = false; scanDocument() }
+                SheetRow(Icons.Default.Folder, s.createFolder) { showDriveBottomSheet = false; showAddFolderDialog = true }
             }
         }
     }
