@@ -40,12 +40,14 @@ class DavExtras(private val session: DavSession) {
         }.sortedByDescending { it.deletionTimeSeconds }
     }
 
-    /** Moves a trashed item back to where it was deleted from. */
+    /**
+     * Moves a trashed item back to where it was deleted from. No `Overwrite` header: Nextcloud answers
+     * "412 Precondition Failed" to `Overwrite: F` on the virtual restore collection, whatever its content.
+     */
     fun restore(item: TrashedFile) {
         val name = item.path.trimEnd('/').substringAfterLast('/')
         val request = session.request(item.path)
             .header("Destination", session.url("$trashRestore/$name"))
-            .header("Overwrite", "F")
             .method("MOVE", null).build()
         session.call(request).close()
     }

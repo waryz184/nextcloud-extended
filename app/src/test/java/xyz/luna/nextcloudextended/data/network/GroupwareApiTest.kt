@@ -195,6 +195,7 @@ class GroupwareApiTest {
         val move = requests.last()
         assertEquals("MOVE", move.method)
         assertTrue(move.getHeader("Destination")!!.endsWith("/remote.php/dav/trashbin/u-alice/restore/report.pdf.d1735689600"))
+        assertNull("a real server answers 412 to Overwrite: F on the restore collection", move.getHeader("Overwrite"))
     }
 
     @Test fun versionsAreListedNewestFirstAndRestoredThroughTheRestoreEndpoint() {

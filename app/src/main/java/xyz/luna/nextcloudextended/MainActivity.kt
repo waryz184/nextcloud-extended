@@ -414,17 +414,18 @@ var mediaAutoUploadEnabled by remember {
     // Track whether WorkManager has any pending or running uploads, so we can show
     // a progress indicator under the top bar.
     var hasActiveUploads by remember { mutableStateOf(false) }
+    // Observed rather than polled: a short upload can start and finish between two polls, and the file
+    // list has to be reloaded as soon as one has completed.
     LaunchedEffect(Unit) {
-        while (true) {
-            val infos = withContext(Dispatchers.Default) {
-                runCatching {
-                    WorkManager.getInstance(context)
-                        .getWorkInfosForUniqueWork(UploadRepository.UNIQUE_WORK)
-                        .get()
-                }.getOrNull().orEmpty()
-            }
+        var finishedBefore: Set<java.util.UUID>? = null
+        WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(UploadRepository.UNIQUE_WORK).collect { infos ->
             hasActiveUploads = infos.any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED }
-            delay(2000)
+            val finished = infos.filter { it.state == WorkInfo.State.SUCCEEDED }.map { it.id }.toSet()
+            val previous = finishedBefore
+            finishedBefore = finished
+            if (previous != null && (finished - previous).isNotEmpty() && vm.isConnected && vm.currentTab == HubTab.FILES) {
+                vm.refreshData()
+            }
         }
     }
 

@@ -51,6 +51,9 @@ object TlsTrust {
 
     private val rejected = ConcurrentHashMap<String, Array<X509Certificate>>()
 
+    /** Chains accepted only because their fingerprint was pinned (for some host), keyed by that fingerprint. */
+    private val acceptedByPin = ConcurrentHashMap<String, Array<X509Certificate>>()
+
     private val systemTrustManager: X509TrustManager by lazy {
         val factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
         factory.init(null as KeyStore?)
@@ -67,7 +70,10 @@ object TlsTrust {
                 val fingerprint = chain.firstOrNull()?.let(::fingerprint)
                 // The host is not known here; the exact-certificate pin plus the hostname verifier below
                 // make accepting by fingerprint equivalent to accepting per host.
-                if (fingerprint != null && known?.allFingerprints()?.contains(fingerprint) == true) return
+                if (fingerprint != null && known?.allFingerprints()?.contains(fingerprint) == true) {
+                    acceptedByPin[fingerprint] = chain
+                    return
+                }
                 chain.firstOrNull()?.let { rejected[LAST] = chain }
                 throw e
             }
@@ -81,7 +87,13 @@ object TlsTrust {
     val hostnameVerifier = HostnameVerifier { host: String, session: SSLSession ->
         defaultVerifier.verify(host, session) || runCatching {
             val leaf = session.peerCertificates.firstOrNull() as? X509Certificate
-            leaf != null && known?.isTrusted(host, fingerprint(leaf)) == true
+            val pinnedForHost = leaf != null && known?.isTrusted(host, fingerprint(leaf)) == true
+            if (!pinnedForHost && leaf != null) {
+                // A certificate the user trusted for another address (same server reached by IP, a second
+                // name, another port…): keep its chain so the UI asks about this address instead of failing.
+                acceptedByPin[fingerprint(leaf)]?.let { rejected[LAST] = it }
+            }
+            pinnedForHost
         }.getOrDefault(false)
     }
 

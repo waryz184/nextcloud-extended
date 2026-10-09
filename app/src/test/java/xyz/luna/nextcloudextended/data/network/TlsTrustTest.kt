@@ -117,6 +117,26 @@ class TlsTrustTest {
         try { get(); fail() } catch (e: IOException) { assertTrue(e is SSLException) }
     }
 
+    @Test fun theSameCertificateReachedByAnotherAddressAsksAgainInsteadOfDeadEnding() {
+        try { get() } catch (_: IOException) {}
+        TlsTrust.trust(TlsTrust.describeRejected(server.hostName)!!)
+        assertEquals("hello", get())
+
+        // The same server, now reached by its IP address: the certificate has no entry for it, so it is
+        // refused — and the user must be offered to trust it for that address.
+        val byIp = if (server.hostName == "127.0.0.1") "localhost" else "127.0.0.1"
+        val url = server.url("/").newBuilder().host(byIp).build()
+        fun getByIp() = client().newCall(Request.Builder().url(url).build()).execute().use { it.body!!.string() }
+        try { getByIp(); fail("a certificate trusted for another name must not be silently accepted") } catch (e: IOException) {
+            assertTrue(e is SSLException)
+        }
+        val info = TlsTrust.describeRejected(byIp)
+        assertNotNull("the user must be able to decide about this address", info)
+        TlsTrust.trust(info!!)
+        client().connectionPool.evictAll()
+        assertEquals("hello again", getByIp())
+    }
+
     @Test fun nothingIsReportedWhenNothingWasRefused() {
         assertNull(TlsTrust.describeRejected("never-seen.example"))
     }
