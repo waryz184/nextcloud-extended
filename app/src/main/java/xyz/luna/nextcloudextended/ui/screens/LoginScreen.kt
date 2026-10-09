@@ -3,6 +3,8 @@ package xyz.luna.nextcloudextended.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -18,12 +20,15 @@ fun LoginScreen(
     serverUrl: String,
     username: String,
     password: String,
+    appPasswordMode: Boolean,
     isLoading: Boolean,
     language: AppLanguage,
     onLanguageChange: (AppLanguage) -> Unit,
     onServerUrlChange: (String) -> Unit,
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
+    onAppPasswordModeChange: (Boolean) -> Unit,
+    onScanQr: () -> Unit,
     onConnect: () -> Unit
 ) {
     val s = LocalStrings.current
@@ -60,6 +65,35 @@ fun LoginScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 32.dp)
         )
+        // Password vs. Nextcloud app password (generated in Settings → Security).
+        val modes = listOf(false to s.loginModePassword, true to s.loginModeAppPassword)
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+            modes.forEachIndexed { i, (isAppPassword, label) ->
+                SegmentedButton(
+                    shape = SegmentedButtonDefaults.itemShape(index = i, count = modes.size),
+                    onClick = { onAppPasswordModeChange(isAppPassword) },
+                    selected = appPasswordMode == isAppPassword,
+                    label = { Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1) }
+                )
+            }
+        }
+        if (appPasswordMode) {
+            Text(
+                s.appPasswordHelp,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            OutlinedButton(
+                onClick = onScanQr,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                enabled = !isLoading
+            ) {
+                Icon(Icons.Default.QrCodeScanner, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(s.scanQrCode)
+            }
+        }
         OutlinedTextField(
             value = serverUrl, onValueChange = onServerUrlChange,
             label = { Text(s.serverUrlLabel) },
@@ -75,7 +109,7 @@ fun LoginScreen(
         )
         OutlinedTextField(
             value = password, onValueChange = onPasswordChange,
-            label = { Text(s.passwordLabel) },
+            label = { Text(if (appPasswordMode) s.appPasswordLabel else s.passwordLabel) },
             visualTransformation = PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
             singleLine = true

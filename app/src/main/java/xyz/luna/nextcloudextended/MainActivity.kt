@@ -54,6 +54,9 @@ import xyz.luna.nextcloudextended.account.NextcloudAccountManager
 import xyz.luna.nextcloudextended.account.NextcloudAccounts
 import xyz.luna.nextcloudextended.account.AccountProfile
 import xyz.luna.nextcloudextended.account.AccountProfiles
+import xyz.luna.nextcloudextended.account.parseNextcloudLoginQr
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import xyz.luna.nextcloudextended.sync.AccountSetupActivity
 import xyz.luna.nextcloudextended.ui.screens.*
 import xyz.luna.nextcloudextended.ui.theme.NextcloudExtendedTheme
@@ -216,6 +219,8 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     var serverUrl by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    // Login form mode: regular password, or a Nextcloud app password (typed or scanned from the QR code).
+    var appPasswordMode by remember { mutableStateOf(sharedPrefs.getBoolean("app_password_mode", false)) }
     // Language: stored preference, else device locale (FR for French devices, EN otherwise)
     var language by remember {
         mutableStateOf(
@@ -268,6 +273,32 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         }
     }
     val s = stringsFor(language)
+
+    // Validates and signs in; shared by the manual form and the Nextcloud login QR code.
+    fun loginWith(rawUrl: String, user: String, secret: String) {
+        // Trim + default to https:// when the user omits the scheme, so OkHttp doesn't
+        // reject a bare host like "cloud.example.com".
+        val url = normalizeServerUrl(rawUrl)
+        serverUrl = url; username = user; password = secret
+        if (url.isEmpty() || user.isEmpty() || secret.isEmpty()) { vm.errorMessage = s.fillAllFields; return }
+        if (!url.startsWith("https://", ignoreCase = true)) { vm.errorMessage = s.insecureHttpBlocked; return }
+        vm.connect(url, user, secret) {
+            saveAccount(url, user, secret)
+            sharedPrefs.edit().putString("server_url", url).putString("username", user).putString("password", secret).remove("allow_insecure_http").apply()
+        }
+    }
+
+    val qrScanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val content = result.contents ?: return@rememberLauncherForActivityResult // cancelled
+        val login = parseNextcloudLoginQr(content)
+        if (login == null) {
+            vm.errorMessage = s.qrCodeInvalid
+        } else {
+            appPasswordMode = true
+            sharedPrefs.edit().putBoolean("app_password_mode", true).apply()
+            loginWith(login.serverUrl, login.username, login.appPassword)
+        }
+    }
 
     var showAddFolderDialog by remember { mutableStateOf(false) }
     var showDriveBottomSheet by remember { mutableStateOf(false) }
@@ -743,21 +774,18 @@ if (vm.isConnected) {
                 if (!prefsLoaded || (autoLoginStarted && vm.isLoading)) {
                     AutoConnectSplash()
                 } else {
-                LoginScreen(serverUrl = serverUrl, username = username, password = password, isLoading = vm.isLoading,
+                LoginScreen(serverUrl = serverUrl, username = username, password = password, appPasswordMode = appPasswordMode, isLoading = vm.isLoading,
                     language = language, onLanguageChange = { language = it; sharedPrefs.edit().putString("language", it.name).apply() },
                     onServerUrlChange = { serverUrl = it }, onUsernameChange = { username = it }, onPasswordChange = { password = it },
-                    onConnect = {
-                        // Trim + default to https:// when the user omits the scheme, so OkHttp doesn't
-                        // reject a bare host like "cloud.example.com".
-                        val url = normalizeServerUrl(serverUrl)
-                        if (url != serverUrl) serverUrl = url
-                        if (url.isEmpty() || username.isEmpty() || password.isEmpty()) { vm.errorMessage = s.fillAllFields; return@LoginScreen }
-                        if (!url.startsWith("https://", ignoreCase = true)) { vm.errorMessage = s.insecureHttpBlocked; return@LoginScreen }
-                        vm.connect(url, username, password) {
-                            saveAccount(url, username, password)
-                            sharedPrefs.edit().putString("server_url", url).putString("username", username).putString("password", password).remove("allow_insecure_http").apply()
-                        }
-                    })
+                    onAppPasswordModeChange = { appPasswordMode = it; sharedPrefs.edit().putBoolean("app_password_mode", it).apply() },
+                    onScanQr = {
+                        qrScanLauncher.launch(ScanOptions()
+                            .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                            .setPrompt(s.scanQrPrompt)
+                            .setBeepEnabled(false)
+                            .setOrientationLocked(false))
+                    },
+                    onConnect = { loginWith(serverUrl, username, password) })
                 }
             } else {
                 PullToRefreshBox(isRefreshing = vm.isLoading, onRefresh = { vm.refreshData() }, modifier = Modifier.fillMaxSize()) {

@@ -38,7 +38,7 @@ supported.
 The app requests the minimum permissions needed for the features you use:
 
 - **Internet** — required to communicate with your Nextcloud server.
-- **Camera** — only to take photos and scan documents into your Files.
+- **Camera** — only to take photos, scan documents into your Files, or scan the Nextcloud login QR code (decoded on-device; the credentials it contains are only used to sign in to your own server).
 - **Photos and videos** (or **legacy storage** on Android 8–12) — only when you enable
   **automatic media upload**; no media is uploaded without your explicit opt-in.
 - **Use biometric** (with your device lock as fallback) — only when you enable **App lock**.

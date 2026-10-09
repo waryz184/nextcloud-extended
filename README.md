@@ -72,6 +72,7 @@ follow your device locale on first launch.
 - Credentials are stored **encrypted on-device** (`EncryptedSharedPreferences`, AES-256).
 - **HTTPS is enforced by default.** Plain HTTP is an opt-in in the advanced options, intended only
   for a server on a trusted local network.
+- Sign in with a regular password, a Nextcloud **app password** or by **scanning the Nextcloud login QR code**.
 - Permissions are requested only when a feature needs them: Internet, camera, media access,
   biometrics and legacy storage on older Android versions.
 
@@ -84,9 +85,15 @@ See [PRIVACY.md](PRIVACY.md) for the full policy.
 Install the latest signed APK from the [Releases](https://github.com/waryz184/nextcloud-extended/releases)
 page. A Google Play Store release is planned.
 
-On first launch, enter your **server URL**, **username** and **password**. Using a dedicated
-[Nextcloud app password](https://docs.nextcloud.com/server/latest/user_manual/en/session_management.html#managing-devices)
-is recommended rather than your main account password.
+On first launch, choose how to sign in:
+
+- **Password** — enter your **server URL**, **username** and **password**.
+- **App password** (recommended, required when two-factor authentication is enabled) — generate one in
+  Nextcloud under *Settings → Security → Devices & sessions → Create new app password*
+  ([documentation](https://docs.nextcloud.com/server/latest/user_manual/en/session_management.html#managing-devices)),
+  then either type it in, or tap **Scan Nextcloud QR code** and scan the QR code shown by
+  *Show QR code for mobile apps*. The server, username and app password are filled in and the
+  app signs in automatically.
 
 ---
 
