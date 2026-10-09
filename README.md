@@ -52,7 +52,7 @@ follow your device locale on first launch.
   and emails, postal addresses and groups.
 - Tap a phone number to call, an email to compose, or an address to open it in maps.
 - Search by name, phone, email, organization or group.
-- Optional sync to the Android Contacts app via a system account.
+- Optional sync to the Android Contacts app via a system account. The setup reuses your current Nextcloud login (same server), or can be filled by scanning the Nextcloud login QR code.
 
 ### 🛡️ Accounts, security & uploads
 - **Multiple accounts** with secure per-account credential storage, account switcher and strict

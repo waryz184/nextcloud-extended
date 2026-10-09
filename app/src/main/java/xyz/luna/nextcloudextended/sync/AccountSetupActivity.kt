@@ -18,6 +18,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +28,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
+import xyz.luna.nextcloudextended.account.AccountProfiles
+import xyz.luna.nextcloudextended.account.parseNextcloudLoginQr
 import android.Manifest
 import android.content.pm.PackageManager
 import kotlinx.coroutines.Dispatchers
@@ -115,6 +123,31 @@ private fun AccountSetupScreen(
     }
     var password by remember { mutableStateOf("") }
 
+    // The contacts live on the same server as the one the user is already signed in to: reuse
+    // that login (stored encrypted by the main app) instead of asking for it a second time.
+    var prefilledFromLogin by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (existingAccount != null) return@LaunchedEffect
+        val profile = withContext(Dispatchers.IO) {
+            runCatching {
+                val key = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
+                val prefs = EncryptedSharedPreferences.create(
+                    context, "secret_shared_prefs", key,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+                val profiles = AccountProfiles.load(prefs)
+                profiles.firstOrNull { it.id == prefs.getString("active_account_id", null) } ?: profiles.firstOrNull()
+            }.getOrNull()
+        }
+        if (profile != null && serverUrl.isEmpty() && username.isEmpty() && password.isEmpty()) {
+            serverUrl = profile.serverUrl
+            username = profile.username
+            password = profile.password
+            prefilledFromLogin = true
+        }
+    }
+
     var step by remember { mutableStateOf<SetupStep>(SetupStep.Credentials) }
     var selectedBookIndex by remember { mutableIntStateOf(0) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -177,6 +210,22 @@ private fun AccountSetupScreen(
         }
     }
 
+    val qrScanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val content = result.contents ?: return@rememberLauncherForActivityResult // cancelled
+        val login = parseNextcloudLoginQr(content)
+        if (login == null) {
+            errorMessage = s.qrCodeInvalid
+        } else if (isUpdate && (login.serverUrl != normalizeServerUrl(serverUrl) || login.username != username)) {
+            errorMessage = s.qrOtherAccount
+        } else {
+            serverUrl = login.serverUrl
+            username = login.username
+            password = login.appPassword
+            prefilledFromLogin = false
+            errorMessage = null
+        }
+    }
+
     Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
         Column(
             modifier = Modifier
@@ -198,6 +247,32 @@ private fun AccountSetupScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 24.dp)
                 )
+
+                if (prefilledFromLogin) {
+                    Text(
+                        s.prefilledFromLogin,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                    )
+                }
+                OutlinedButton(
+                    onClick = {
+                        qrScanLauncher.launch(
+                            ScanOptions()
+                                .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                                .setPrompt(s.scanQrPrompt)
+                                .setBeepEnabled(false)
+                                .setOrientationLocked(false)
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    enabled = !verifying
+                ) {
+                    Icon(Icons.Default.QrCodeScanner, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(s.scanQrCode)
+                }
 
                 if (isUpdate) {
                     OutlinedTextField(
@@ -369,6 +444,11 @@ private fun stringsFor(language: AppLanguage): AccountSetupStrings = when (langu
         createAccount = "Create account",
         accountSetupFailed = { "Could not verify the connection: $it" },
         accountCreated = "Account created",
+        scanQrCode = "Scan Nextcloud QR code",
+        scanQrPrompt = "Scan the QR code from Settings → Security",
+        qrCodeInvalid = "This is not a valid Nextcloud login QR code.",
+        qrOtherAccount = "This QR code belongs to a different account.",
+        prefilledFromLogin = "Pre-filled with your current Nextcloud login — just tap Connect.",
     )
     AppLanguage.FR -> AccountSetupStrings(
         accountSetupTitle = "Ajouter un compte Nextcloud",
@@ -382,6 +462,11 @@ private fun stringsFor(language: AppLanguage): AccountSetupStrings = when (langu
         createAccount = "Créer le compte",
         accountSetupFailed = { "Impossible de vérifier la connexion : $it" },
         accountCreated = "Compte créé",
+        scanQrCode = "Scanner le QR code Nextcloud",
+        scanQrPrompt = "Scannez le QR code de Paramètres → Sécurité",
+        qrCodeInvalid = "Ce QR code n'est pas un QR code de connexion Nextcloud valide.",
+        qrOtherAccount = "Ce QR code correspond à un autre compte.",
+        prefilledFromLogin = "Pré-rempli avec votre connexion Nextcloud actuelle — appuyez simplement sur Connecter.",
     )
 }
 
@@ -397,4 +482,9 @@ private data class AccountSetupStrings(
     val createAccount: String,
     val accountSetupFailed: (String) -> String,
     val accountCreated: String,
+    val scanQrCode: String,
+    val scanQrPrompt: String,
+    val qrCodeInvalid: String,
+    val qrOtherAccount: String,
+    val prefilledFromLogin: String,
 )
