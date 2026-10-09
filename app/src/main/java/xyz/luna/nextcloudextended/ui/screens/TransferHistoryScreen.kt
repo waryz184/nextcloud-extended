@@ -33,6 +33,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import xyz.luna.nextcloudextended.LocalExtra
+import xyz.luna.nextcloudextended.LocalStrings
 import xyz.luna.nextcloudextended.upload.NextcloudDatabase
 import xyz.luna.nextcloudextended.upload.UploadEntity
 import xyz.luna.nextcloudextended.upload.DownloadEntity
@@ -43,32 +45,52 @@ private data class TransferHistoryRow(
     val title: String,
     val detail: String,
     val state: String,
-    val timestamp: Long
+    val timestamp: Long,
+    val error: String? = null
 )
+
+/** "/remote.php/dav/files/alice/Photos/2025/" → "Photos/2025"; the account root reads "/". */
+internal fun remoteFolder(path: String): String {
+    val decoded = runCatching { java.net.URLDecoder.decode(path.replace("+", "%2B"), "UTF-8") }.getOrDefault(path)
+    val relative = decoded.replace(Regex("^.*?remote\\.php/dav/files/[^/]+/?"), "").trim('/')
+    return relative.ifEmpty { "/" }
+}
 
 @androidx.compose.material3.ExperimentalMaterial3Api
 @Composable
 fun TransferHistoryScreen(onDismiss: () -> Unit, onAction: (String, Long, String) -> Unit) {
     val context = LocalContext.current
+    val s = LocalStrings.current
+    val x = LocalExtra.current
     var rows by remember { mutableStateOf<List<TransferHistoryRow>?>(null) }
 
     LaunchedEffect(Unit) {
         rows = withContext(Dispatchers.IO) {
             val database = NextcloudDatabase.get(context)
             val uploads = database.uploads().all().map { upload ->
-                TransferHistoryRow("upload", upload.id, "Upload: ${upload.name}", upload.accountId, upload.state, upload.createdAt)
+                TransferHistoryRow("upload", upload.id, x.transferUpload(upload.name), remoteFolder(upload.parent), upload.state, upload.createdAt, upload.lastError)
             }
             val downloads = database.downloads().all().map { download ->
-                TransferHistoryRow("download", download.id, "Download: ${download.fileName}", download.accountId, download.state, download.createdAt)
+                TransferHistoryRow("download", download.id, x.transferDownload(download.fileName), remoteFolder(download.remotePath.trimEnd('/').substringBeforeLast('/', "")), download.state, download.createdAt, download.lastError)
             }
             (uploads + downloads).sortedByDescending { it.timestamp }
         }
     }
 
+    fun stateLabel(state: String) = when (state) {
+        UploadEntity.STATE_QUEUED -> x.transferQueued
+        UploadEntity.STATE_RUNNING -> x.transferRunning
+        UploadEntity.STATE_RETRY -> x.transferRetrying
+        UploadEntity.STATE_FAILED, DownloadEntity.STATE_FAILED -> x.transferFailed
+        DownloadEntity.STATE_COMPLETED -> x.transferCompleted
+        DownloadEntity.STATE_CANCELLED -> x.transferCancelled
+        else -> state
+    }
+
     Scaffold(topBar = {
         TopAppBar(
-            title = { Text("Transfer history") },
-            navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close") } }
+            title = { Text(x.transfers) },
+            navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, s.close) } }
         )
     }) { padding ->
         val history = rows
@@ -78,7 +100,7 @@ fun TransferHistoryScreen(onDismiss: () -> Unit, onAction: (String, Long, String
             }
         } else if (history.isEmpty()) {
             Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Text("No transfers yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(x.transferNone, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
@@ -91,12 +113,18 @@ fun TransferHistoryScreen(onDismiss: () -> Unit, onAction: (String, Long, String
                         )
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
                             Text(row.title, style = MaterialTheme.typography.bodyLarge)
-                            Text("${row.state} · ${row.detail}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            val whenText = android.text.format.DateUtils.getRelativeTimeSpanString(
+                                row.timestamp, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS
+                            )
+                            Text("${stateLabel(row.state)} · ${row.detail} · $whenText", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (!row.error.isNullOrBlank() && (row.state == UploadEntity.STATE_FAILED || row.state == DownloadEntity.STATE_FAILED || row.state == UploadEntity.STATE_RETRY)) {
+                                Text(row.error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 2)
+                            }
                         }
                         if (row.state == UploadEntity.STATE_FAILED || row.state == DownloadEntity.STATE_FAILED || row.state == UploadEntity.STATE_RETRY || row.state == DownloadEntity.STATE_RETRY) {
-                            TextButton(onClick = { onAction(row.kind, row.id, "retry") }) { Text("Retry") }
+                            TextButton(onClick = { onAction(row.kind, row.id, "retry") }) { Text(x.transferRetry) }
                         } else if (row.state == UploadEntity.STATE_QUEUED || row.state == UploadEntity.STATE_RUNNING || row.state == DownloadEntity.STATE_QUEUED || row.state == DownloadEntity.STATE_RUNNING) {
-                            TextButton(onClick = { onAction(row.kind, row.id, "cancel") }) { Text("Cancel") }
+                            TextButton(onClick = { onAction(row.kind, row.id, "cancel") }) { Text(s.cancel) }
                         }
                     }
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))

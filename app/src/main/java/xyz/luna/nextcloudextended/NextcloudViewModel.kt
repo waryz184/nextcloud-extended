@@ -72,7 +72,7 @@ class NextcloudViewModel(application: Application) : AndroidViewModel(applicatio
     private val s get() = stringsFor(language)
     private val x get() = extraFor(language)
 
-    var currentTab by mutableStateOf(HubTab.CALENDAR)
+    var currentTab by mutableStateOf(HubTab.FILES)
     var calendarViewMode by mutableStateOf(CalendarViewMode.MONTH)
     var selectedDate by mutableStateOf(LocalDate.now())
 

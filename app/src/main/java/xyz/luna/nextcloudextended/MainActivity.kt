@@ -363,6 +363,7 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
     var showCreateTaskListDialog by remember { mutableStateOf(false) }
     var showRenameTaskListDialog by remember { mutableStateOf(false) }
     var showDeleteTaskListDialog by remember { mutableStateOf(false) }
+    var fileToDelete by remember { mutableStateOf<NextcloudFile?>(null) }
     var showRenameFileDialog by remember { mutableStateOf(false) }
     var fileToRename by remember { mutableStateOf<NextcloudFile?>(null) }
     var showTransferFileDialog by remember { mutableStateOf(false) }
@@ -617,11 +618,14 @@ LaunchedEffect(vm.currentTab, vm.isConnected) {
     LaunchedEffect(vm.isConnected) {
         if (vm.isConnected) {
             val am = NextcloudAccountManager(context)
-            if (am.firstAccount() == null) {
+            // Offered once: it used to stay on screen for good, covering the bottom of every list.
+            if (am.firstAccount() == null && !sharedPrefs.getBoolean("contacts_prompt_shown", false)) {
+                sharedPrefs.edit().putBoolean("contacts_prompt_shown", true).apply()
                 val result = snackbarHostState.showSnackbar(
-                    message = "Sync contacts with the phone's Contacts app",
-                    actionLabel = "Add account",
-                    duration = SnackbarDuration.Indefinite
+                    message = extra.contactsSyncPrompt,
+                    actionLabel = extra.contactsSyncAdd,
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long
                 )
                 if (result == SnackbarResult.ActionPerformed) {
                     val intent = Intent(context, AccountSetupActivity::class.java)
@@ -1007,16 +1011,7 @@ val uris = buildList {
                             },
                             onDownloadFile = { file -> enqueueFileDownload(file) },
                             onMakeOffline = { file -> makeFileAvailableOffline(file) },
-                            onDeleteFile = { file ->
-                                if (vm.client == null) {
-                                    val accountId = accounts.firstOrNull { it.serverUrl == serverUrl && it.username == username }?.id
-                                    if (accountId != null) {
-                                        coroutineScope.launch { OfflineOperationReplayer.enqueueDelete(context, accountId, file.path) }
-                                    }
-                                } else {
-                                    vm.deleteFile(file.path)
-                                }
-                            }, onRenameFile = { fileToRename = it; showRenameFileDialog = true },
+                            onDeleteFile = { file -> fileToDelete = file }, onRenameFile = { fileToRename = it; showRenameFileDialog = true },
                             onCopyFile = { transferFile = it; transferIsCopy = true; showTransferFileDialog = true },
                             onMoveFile = { transferFile = it; transferIsCopy = false; showTransferFileDialog = true },
                             onToggleFavorite = { vm.toggleFavorite(it) },
@@ -1139,6 +1134,28 @@ val uris = buildList {
     }
 
     // Drive bottom sheet
+    fileToDelete?.let { file ->
+        AlertDialog(
+            onDismissRequest = { fileToDelete = null },
+            title = { Text(extra.deleteConfirmTitle) },
+            text = { Text(if (file.isDirectory) extra.deleteConfirmFolderBody(file.name) else extra.deleteConfirmBody(file.name)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    fileToDelete = null
+                    if (vm.client == null) {
+                        val accountId = accounts.firstOrNull { it.serverUrl == serverUrl && it.username == username }?.id
+                        if (accountId != null) {
+                            coroutineScope.launch { OfflineOperationReplayer.enqueueDelete(context, accountId, file.path) }
+                        }
+                    } else {
+                        vm.deleteFile(file.path)
+                    }
+                }) { Text(s.delete, color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { fileToDelete = null }) { Text(s.cancel) } }
+        )
+    }
+
     if (showDriveBottomSheet) {
         ModalBottomSheet(onDismissRequest = { showDriveBottomSheet = false }) {
             Column(modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp)) {

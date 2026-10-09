@@ -117,7 +117,23 @@ class ExtraStrings(
     val drawerOthers: String,
     val noFavorites: String,
     val account: String,
-    val selectedSort: String
+    val selectedSort: String,
+    // ── Delete confirmation, contacts prompt, transfer history ──
+    val deleteConfirmTitle: String,
+    val deleteConfirmBody: (String) -> String,
+    val deleteConfirmFolderBody: (String) -> String,
+    val contactsSyncPrompt: String,
+    val contactsSyncAdd: String,
+    val transferNone: String,
+    val transferUpload: (String) -> String,
+    val transferDownload: (String) -> String,
+    val transferQueued: String,
+    val transferRunning: String,
+    val transferRetrying: String,
+    val transferCompleted: String,
+    val transferFailed: String,
+    val transferCancelled: String,
+    val transferRetry: String
 ) {
     /** One line a person can act on, for any failure produced by the network layer. */
     fun describe(error: Throwable): String {
@@ -248,7 +264,22 @@ val EnExtra = ExtraStrings(
     drawerOthers = "More",
     noFavorites = "Nothing marked as favorite yet",
     account = "Account",
-    selectedSort = "Sorted by"
+    selectedSort = "Sorted by",
+    deleteConfirmTitle = "Delete?",
+    deleteConfirmBody = { "\"$it\" will be moved to the deleted files." },
+    deleteConfirmFolderBody = { "The folder \"$it\" and everything in it will be moved to the deleted files." },
+    contactsSyncPrompt = "Sync contacts with the phone's Contacts app",
+    contactsSyncAdd = "Add account",
+    transferNone = "No transfers yet",
+    transferUpload = { "Upload: $it" },
+    transferDownload = { "Download: $it" },
+    transferQueued = "Waiting",
+    transferRunning = "In progress",
+    transferRetrying = "Will retry",
+    transferCompleted = "Completed",
+    transferFailed = "Failed",
+    transferCancelled = "Cancelled",
+    transferRetry = "Retry"
 )
 
 val FrExtra = ExtraStrings(
@@ -349,7 +380,22 @@ val FrExtra = ExtraStrings(
     drawerOthers = "Plus",
     noFavorites = "Aucun favori pour le moment",
     account = "Compte",
-    selectedSort = "Trié par"
+    selectedSort = "Trié par",
+    deleteConfirmTitle = "Supprimer ?",
+    deleteConfirmBody = { "« $it » sera déplacé dans les fichiers supprimés." },
+    deleteConfirmFolderBody = { "Le dossier « $it » et tout son contenu seront déplacés dans les fichiers supprimés." },
+    contactsSyncPrompt = "Synchroniser les contacts avec l'application Contacts du téléphone",
+    contactsSyncAdd = "Ajouter un compte",
+    transferNone = "Aucun transfert pour le moment",
+    transferUpload = { "Envoi : $it" },
+    transferDownload = { "Téléchargement : $it" },
+    transferQueued = "En attente",
+    transferRunning = "En cours",
+    transferRetrying = "Nouvel essai prévu",
+    transferCompleted = "Terminé",
+    transferFailed = "Échec",
+    transferCancelled = "Annulé",
+    transferRetry = "Réessayer"
 )
 
 fun extraFor(language: AppLanguage): ExtraStrings = when (language) {
