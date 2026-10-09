@@ -55,8 +55,6 @@ import xyz.luna.nextcloudextended.account.NextcloudAccounts
 import xyz.luna.nextcloudextended.account.AccountProfile
 import xyz.luna.nextcloudextended.account.AccountProfiles
 import xyz.luna.nextcloudextended.account.parseNextcloudLoginQr
-import com.journeyapps.barcodescanner.ScanContract
-import com.journeyapps.barcodescanner.ScanOptions
 import xyz.luna.nextcloudextended.sync.AccountSetupActivity
 import xyz.luna.nextcloudextended.ui.screens.*
 import xyz.luna.nextcloudextended.ui.theme.NextcloudExtendedTheme
@@ -288,16 +286,25 @@ fun NextcloudHubApp(vm: NextcloudViewModel = viewModel()) {
         }
     }
 
-    val qrScanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
-        val content = result.contents ?: return@rememberLauncherForActivityResult // cancelled
-        val login = parseNextcloudLoginQr(content)
-        if (login == null) {
-            vm.errorMessage = s.qrCodeInvalid
-        } else {
-            appPasswordMode = true
-            sharedPrefs.edit().putBoolean("app_password_mode", true).apply()
-            loginWith(login.serverUrl, login.username, login.appPassword)
-        }
+    var showQrScanner by remember { mutableStateOf(false) }
+    if (showQrScanner) {
+        QrScannerDialog(
+            prompt = s.scanQrPrompt,
+            cancelLabel = s.cancel,
+            permissionDeniedLabel = s.cameraPermissionDenied,
+            onResult = { content ->
+                showQrScanner = false
+                val login = parseNextcloudLoginQr(content)
+                if (login == null) {
+                    vm.errorMessage = s.qrCodeInvalid
+                } else {
+                    appPasswordMode = true
+                    sharedPrefs.edit().putBoolean("app_password_mode", true).apply()
+                    loginWith(login.serverUrl, login.username, login.appPassword)
+                }
+            },
+            onDismiss = { showQrScanner = false }
+        )
     }
 
     var showAddFolderDialog by remember { mutableStateOf(false) }
@@ -778,13 +785,7 @@ if (vm.isConnected) {
                     language = language, onLanguageChange = { language = it; sharedPrefs.edit().putString("language", it.name).apply() },
                     onServerUrlChange = { serverUrl = it }, onUsernameChange = { username = it }, onPasswordChange = { password = it },
                     onAppPasswordModeChange = { appPasswordMode = it; sharedPrefs.edit().putBoolean("app_password_mode", it).apply() },
-                    onScanQr = {
-                        qrScanLauncher.launch(ScanOptions()
-                            .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                            .setPrompt(s.scanQrPrompt)
-                            .setBeepEnabled(false)
-                            .setOrientationLocked(false))
-                    },
+                    onScanQr = { showQrScanner = true },
                     onConnect = { loginWith(serverUrl, username, password) })
                 }
             } else {

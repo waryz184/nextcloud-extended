@@ -23,8 +23,8 @@ android {
         applicationId = "xyz.luna.nextcloudextended"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 4
+        versionName = "1.0.3"
         multiDexEnabled = true
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -112,8 +112,12 @@ dependencies {
     // OkHttp for CalDAV
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // QR code scanner for the Nextcloud app-password login QR (pure ZXing, no Google Play services)
-    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    // In-app QR scanner for the Nextcloud login QR: CameraX preview + ZXing decoder (no Google Play services)
+    implementation("androidx.camera:camera-core:1.3.4")
+    implementation("androidx.camera:camera-camera2:1.3.4")
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    implementation("androidx.camera:camera-view:1.3.4")
+    implementation("com.google.zxing:core:3.5.3")
 
     // Apache POI for Office document viewing (XLSX, XLS, DOCX, PPTX)
     implementation("org.apache.poi:poi-ooxml:5.2.5")

@@ -30,8 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import com.journeyapps.barcodescanner.ScanContract
-import com.journeyapps.barcodescanner.ScanOptions
+import xyz.luna.nextcloudextended.ui.screens.QrScannerDialog
 import xyz.luna.nextcloudextended.account.AccountProfiles
 import xyz.luna.nextcloudextended.account.parseNextcloudLoginQr
 import android.Manifest
@@ -210,20 +209,29 @@ private fun AccountSetupScreen(
         }
     }
 
-    val qrScanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
-        val content = result.contents ?: return@rememberLauncherForActivityResult // cancelled
-        val login = parseNextcloudLoginQr(content)
-        if (login == null) {
-            errorMessage = s.qrCodeInvalid
-        } else if (isUpdate && (login.serverUrl != normalizeServerUrl(serverUrl) || login.username != username)) {
-            errorMessage = s.qrOtherAccount
-        } else {
-            serverUrl = login.serverUrl
-            username = login.username
-            password = login.appPassword
-            prefilledFromLogin = false
-            errorMessage = null
-        }
+    var showQrScanner by remember { mutableStateOf(false) }
+    if (showQrScanner) {
+        QrScannerDialog(
+            prompt = s.scanQrPrompt,
+            cancelLabel = s.cancel,
+            permissionDeniedLabel = s.cameraPermissionDenied,
+            onResult = { content ->
+                showQrScanner = false
+                val login = parseNextcloudLoginQr(content)
+                if (login == null) {
+                    errorMessage = s.qrCodeInvalid
+                } else if (isUpdate && (login.serverUrl != normalizeServerUrl(serverUrl) || login.username != username)) {
+                    errorMessage = s.qrOtherAccount
+                } else {
+                    serverUrl = login.serverUrl
+                    username = login.username
+                    password = login.appPassword
+                    prefilledFromLogin = false
+                    errorMessage = null
+                }
+            },
+            onDismiss = { showQrScanner = false }
+        )
     }
 
     Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
@@ -257,15 +265,7 @@ private fun AccountSetupScreen(
                     )
                 }
                 OutlinedButton(
-                    onClick = {
-                        qrScanLauncher.launch(
-                            ScanOptions()
-                                .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                                .setPrompt(s.scanQrPrompt)
-                                .setBeepEnabled(false)
-                                .setOrientationLocked(false)
-                        )
-                    },
+                    onClick = { showQrScanner = true },
                     modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                     enabled = !verifying
                 ) {
@@ -444,6 +444,8 @@ private fun stringsFor(language: AppLanguage): AccountSetupStrings = when (langu
         createAccount = "Create account",
         accountSetupFailed = { "Could not verify the connection: $it" },
         accountCreated = "Account created",
+        cancel = "Cancel",
+        cameraPermissionDenied = "Camera permission is required to scan the QR code. Allow it in the app settings.",
         scanQrCode = "Scan Nextcloud QR code",
         scanQrPrompt = "Scan the QR code from Settings → Security",
         qrCodeInvalid = "This is not a valid Nextcloud login QR code.",
@@ -462,6 +464,8 @@ private fun stringsFor(language: AppLanguage): AccountSetupStrings = when (langu
         createAccount = "Créer le compte",
         accountSetupFailed = { "Impossible de vérifier la connexion : $it" },
         accountCreated = "Compte créé",
+        cancel = "Annuler",
+        cameraPermissionDenied = "L'autorisation de la caméra est nécessaire pour scanner le QR code. Autorisez-la dans les paramètres de l'app.",
         scanQrCode = "Scanner le QR code Nextcloud",
         scanQrPrompt = "Scannez le QR code de Paramètres → Sécurité",
         qrCodeInvalid = "Ce QR code n'est pas un QR code de connexion Nextcloud valide.",
@@ -482,6 +486,8 @@ private data class AccountSetupStrings(
     val createAccount: String,
     val accountSetupFailed: (String) -> String,
     val accountCreated: String,
+    val cancel: String,
+    val cameraPermissionDenied: String,
     val scanQrCode: String,
     val scanQrPrompt: String,
     val qrCodeInvalid: String,

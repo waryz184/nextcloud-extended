@@ -27,6 +27,7 @@ class Strings(
     val scanQrCode: String,
     val scanQrPrompt: String,
     val qrCodeInvalid: String,
+    val cameraPermissionDenied: String,
     // Tabs / navigation
     val tabCalendar: String,
     val tabTasks: String,
@@ -250,6 +251,7 @@ val EnStrings = Strings(
     scanQrCode = "Scan Nextcloud QR code",
     scanQrPrompt = "Scan the QR code from Settings → Security",
     qrCodeInvalid = "This is not a valid Nextcloud login QR code.",
+    cameraPermissionDenied = "Camera permission is required to scan the QR code. Allow it in the app settings or type the app password instead.",
     tabCalendar = "Calendar",
     tabTasks = "Tasks",
     tabNotes = "Notes",
@@ -457,6 +459,7 @@ val FrStrings = Strings(
     scanQrCode = "Scanner le QR code Nextcloud",
     scanQrPrompt = "Scannez le QR code de Paramètres → Sécurité",
     qrCodeInvalid = "Ce QR code n'est pas un QR code de connexion Nextcloud valide.",
+    cameraPermissionDenied = "L'autorisation de la caméra est nécessaire pour scanner le QR code. Autorisez-la dans les paramètres de l'app ou saisissez le mot de passe applicatif.",
     tabCalendar = "Agenda",
     tabTasks = "Tâches",
     tabNotes = "Notes",
