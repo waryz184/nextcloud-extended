@@ -139,7 +139,8 @@ class ExtraStrings(
     val timeZoneSectionDesc: String,
     val timeZoneDevice: (String) -> String,
     val timeZoneSearch: String,
-    val timeZoneNoMatch: String
+    val timeZoneNoMatch: String,
+    val eventEndBeforeStart: String
 ) {
     /** One line a person can act on, for any failure produced by the network layer. */
     fun describe(error: Throwable): String {
@@ -290,7 +291,8 @@ val EnExtra = ExtraStrings(
     timeZoneSectionDesc = "Times of events and tasks are shown and saved in this time zone.",
     timeZoneDevice = { "Same as the device ($it)" },
     timeZoneSearch = "Search a time zone (e.g. Paris)",
-    timeZoneNoMatch = "No matching time zone"
+    timeZoneNoMatch = "No matching time zone",
+    eventEndBeforeStart = "The end of the event is before its start"
 )
 
 val FrExtra = ExtraStrings(
@@ -411,7 +413,8 @@ val FrExtra = ExtraStrings(
     timeZoneSectionDesc = "Les heures des événements et des tâches sont affichées et enregistrées dans ce fuseau horaire.",
     timeZoneDevice = { "Identique à l'appareil ($it)" },
     timeZoneSearch = "Rechercher un fuseau horaire (ex. Paris)",
-    timeZoneNoMatch = "Aucun fuseau horaire correspondant"
+    timeZoneNoMatch = "Aucun fuseau horaire correspondant",
+    eventEndBeforeStart = "La fin de l'événement est avant son début"
 )
 
 fun extraFor(language: AppLanguage): ExtraStrings = when (language) {

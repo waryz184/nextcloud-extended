@@ -1105,10 +1105,15 @@ val uris = buildList {
                 OutlinedTextField(value = evTitle, onValueChange = { evTitle = it }, label = { Text(s.title) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
                 OutlinedTextField(value = evDesc, onValueChange = { evDesc = it }, label = { Text(s.description) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
                 OutlinedTextField(value = evLoc, onValueChange = { evLoc = it }, label = { Text(s.location) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-                OutlinedTextField(value = evStart, onValueChange = { evStart = it }, label = { Text(s.startDateTime) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-                OutlinedTextField(value = evEnd, onValueChange = { evEnd = it }, label = { Text(s.endDateTime) }, modifier = Modifier.fillMaxWidth())
+                DateTimeField(label = s.startDateTime, value = evStart, onValueChange = { new -> evEnd = EventDateTime.shiftEnd(evStart, new, evEnd); evStart = new }, modifier = Modifier.padding(bottom = 8.dp))
+                DateTimeField(label = s.endDateTime, value = evEnd, onValueChange = { evEnd = it })
             } },
-            confirmButton = { Button(onClick = { if (evTitle.isNotEmpty()) { editingEvent = null; vm.editEvent(event, evTitle, evDesc, evLoc, evStart, evEnd) } }) { Text(s.save) } },
+            confirmButton = { Button(onClick = {
+                if (evTitle.isNotEmpty()) {
+                    if (EventDateTime.endBeforeStart(evStart, evEnd)) vm.errorMessage = extra.eventEndBeforeStart
+                    else { editingEvent = null; vm.editEvent(event, evTitle, evDesc, evLoc, evStart, evEnd) }
+                }
+            }) { Text(s.save) } },
             dismissButton = { TextButton(onClick = { editingEvent = null }) { Text(s.cancel) } })
     }
 
@@ -1272,10 +1277,10 @@ val uris = buildList {
                 OutlinedTextField(value = evTitle, onValueChange = { evTitle = it }, label = { Text(s.title) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
                 OutlinedTextField(value = evDesc, onValueChange = { evDesc = it }, label = { Text(s.description) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
                 OutlinedTextField(value = evLoc, onValueChange = { evLoc = it }, label = { Text(s.location) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-                OutlinedTextField(value = evStart, onValueChange = { evStart = it }, label = { Text(s.startDateTime) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-                OutlinedTextField(value = evEnd, onValueChange = { evEnd = it }, label = { Text(s.endDateTime) }, modifier = Modifier.fillMaxWidth())
+                DateTimeField(label = s.startDateTime, value = evStart, onValueChange = { new -> evEnd = EventDateTime.shiftEnd(evStart, new, evEnd); evStart = new }, modifier = Modifier.padding(bottom = 8.dp))
+                DateTimeField(label = s.endDateTime, value = evEnd, onValueChange = { evEnd = it })
             } },
-            confirmButton = { Button(onClick = { if (evTitle.isNotEmpty() && selHref.isNotEmpty()) { showAddEventDialog = false; vm.createEvent(CalendarEvent(UUID.randomUUID().toString(), evTitle, evDesc.ifEmpty { null }, evStart, evEnd, evLoc.ifEmpty { null }, selHref), selHref) } else if (selHref.isEmpty()) { vm.errorMessage = s.selectCalendarFirst } }) { Text(s.add) } },
+            confirmButton = { Button(onClick = { if (evTitle.isNotEmpty() && selHref.isNotEmpty() && EventDateTime.endBeforeStart(evStart, evEnd)) { vm.errorMessage = extra.eventEndBeforeStart } else if (evTitle.isNotEmpty() && selHref.isNotEmpty()) { showAddEventDialog = false; vm.createEvent(CalendarEvent(UUID.randomUUID().toString(), evTitle, evDesc.ifEmpty { null }, evStart, evEnd, evLoc.ifEmpty { null }, selHref), selHref) } else if (selHref.isEmpty()) { vm.errorMessage = s.selectCalendarFirst } }) { Text(s.add) } },
             dismissButton = { TextButton(onClick = { showAddEventDialog = false }) { Text(s.cancel) } })
     }
 

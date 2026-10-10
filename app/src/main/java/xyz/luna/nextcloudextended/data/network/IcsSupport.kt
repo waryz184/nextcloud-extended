@@ -198,13 +198,16 @@ internal object Ics {
             "DESCRIPTION" to event.description?.takeIf { it.isNotEmpty() }?.let { "DESCRIPTION:${escapeIcsText(it)}" },
             "LOCATION" to event.location?.takeIf { it.isNotEmpty() }?.let { "LOCATION:${escapeIcsText(it)}" }
         )
-        val dtStart = icsDateLine("DTSTART", formatToIcsDate(event.startTime, zone))
-        val dtEnd = icsDateLine("DTEND", formatToIcsDate(event.endTime, zone))
+        // A blank time means "not set": writing "DTEND:" with no value is invalid and the server answers 415.
+        val start = event.startTime?.takeIf { it.isNotBlank() }
+        val end = event.endTime?.takeIf { it.isNotBlank() }
+        val dtStart = icsDateLine("DTSTART", formatToIcsDate(start, zone))
+        val dtEnd = icsDateLine("DTEND", formatToIcsDate(end, zone))
         return merge(original, "VEVENT", "PRODID:-//Nextcloud Extended//Calendar//EN", event.id, stamp, zone,
             managed = newProps,
             timed = listOf(
-                TimedProp("DTSTART", event.startTime, dtStart),
-                TimedProp("DTEND", event.endTime, dtEnd)
+                TimedProp("DTSTART", start, dtStart),
+                TimedProp("DTEND", end, dtEnd)
             ),
             replaceAlso = mapOf("DTEND" to setOf("DURATION"))
         )
