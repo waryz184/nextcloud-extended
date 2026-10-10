@@ -105,6 +105,41 @@ class IcsSupportTest {
         assertEquals("Line1\nLine2", parsed.description)
     }
 
+    private val allDay = listOf(
+        "BEGIN:VCALENDAR", "BEGIN:VEVENT", "UID:d", "SUMMARY:Holiday",
+        "DTSTART;VALUE=DATE:20261010", "DTEND;VALUE=DATE:20261011", "END:VEVENT", "END:VCALENDAR"
+    ).joinToString("\r\n", postfix = "\r\n")
+
+    @Test fun allDayEventShowsItsLastDayNotTheExclusiveEnd() {
+        val e = Ics.parseEvents(allDay, "/c/", zone = paris).single()
+        assertEquals("2026-10-10", e.startTime)
+        assertEquals("one-day event: start == end", "2026-10-10", e.endTime)
+        val multi = allDay.replace("DTEND;VALUE=DATE:20261011", "DTEND;VALUE=DATE:20261013")
+        assertEquals("2026-10-12", Ics.parseEvents(multi, "/c/", zone = paris).single().endTime)
+    }
+
+    @Test fun allDayEndNeverPrecedesTheStart() {
+        val broken = allDay.replace("DTEND;VALUE=DATE:20261011", "DTEND;VALUE=DATE:20261010")
+        assertEquals("2026-10-10", Ics.parseEvents(broken, "/c/", zone = paris).single().endTime)
+    }
+
+    @Test fun allDayEventIsWrittenWithAnExclusiveEnd() {
+        val ics = Ics.mergeEvent(null, CalendarEvent("n", "Holiday", null, "2026-10-10", "2026-10-12", null, "/c/"), stamp = "20250101T000000Z", zone = paris)
+        assertTrue(ics.contains("DTSTART;VALUE=DATE:20261010"))
+        assertTrue(ics.contains("DTEND;VALUE=DATE:20261013"))
+        val back = Ics.parseEvents(ics, "/c/", zone = paris).single()
+        assertEquals("2026-10-10", back.startTime)
+        assertEquals("2026-10-12", back.endTime)
+    }
+
+    @Test fun untouchedAllDayTimesKeepTheirLines() {
+        val shown = Ics.parseEvents(allDay, "/c/", "/c/d.ics", "e", paris).single()
+        val merged = Ics.mergeEvent(allDay, shown.copy(summary = "Renamed"), stamp = "20250101T000000Z", zone = paris)
+        assertTrue(merged.contains("DTSTART;VALUE=DATE:20261010"))
+        assertTrue(merged.contains("DTEND;VALUE=DATE:20261011"))
+        assertEquals(1, Regex("(?m)^DTEND").findAll(merged).count())
+    }
+
     @Test fun parserIgnoresAlarmDescriptionAndHandlesParameterisedSummary() {
         val ics = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:u\r\nSUMMARY;LANGUAGE=fr:Réunion\r\nDTSTART:20250101T100000Z\r\n" +
             "BEGIN:VALARM\r\nDESCRIPTION:Default Mozilla Description\r\nEND:VALARM\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"

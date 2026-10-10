@@ -2,7 +2,10 @@ package xyz.luna.nextcloudextended.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,6 +20,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -79,6 +83,27 @@ internal object EventDateTime {
         return if (isDateOnly(end)) shifted.toLocalDate().toString() else format(shifted)
     }
 
+    /** [value] reduced to its date (all-day); a blank or unreadable value is left as is. */
+    fun toAllDay(value: String): String = parse(value)?.toLocalDate()?.toString() ?: value
+
+    /** An all-day [value] given the time [at]; a value that already has a time is left as is. */
+    fun toTimed(value: String, at: LocalTime = defaultTime): String {
+        if (!isDateOnly(value)) return value
+        val date = parse(value)?.toLocalDate() ?: return value
+        return format(date.atTime(at))
+    }
+
+    /** Start and end after the "all day" switch is turned [on] or off. A blank end stays blank. */
+    fun setAllDay(start: String, end: String, on: Boolean): Pair<String, String> =
+        if (on) toAllDay(start) to toAllDay(end)
+        else toTimed(start) to toTimed(end, defaultTime.plusHours(1))
+
+    /** The end to offer for a [start] that has none: the same day if all-day, else one hour later. */
+    fun defaultEnd(start: String): String {
+        val s = parse(start) ?: return ""
+        return if (isDateOnly(start)) s.toLocalDate().toString() else format(s.plusHours(1))
+    }
+
     /** True when both times are known and the end is before the start. */
     fun endBeforeStart(start: String, end: String): Boolean {
         val s = parse(start) ?: return false
@@ -93,21 +118,23 @@ internal object EventDateTime {
 fun DateTimeField(label: String, value: String, onValueChange: (String) -> Unit, modifier: Modifier = Modifier) {
     val s = LocalStrings.current
     val parsed = EventDateTime.parse(value)
+    val allDay = EventDateTime.isDateOnly(value)
     var showDate by remember { mutableStateOf(false) }
     var showTime by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxWidth()) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { showDate = true }, modifier = Modifier.weight(3f)) {
-                Icon(Icons.Default.DateRange, null)
-                Spacer(Modifier.width(8.dp))
-                Text(parsed?.toLocalDate()?.toString() ?: "—", maxLines = 1)
+            OutlinedButton(onClick = { showDate = true }, modifier = Modifier.weight(if (allDay) 1f else 3f), contentPadding = PaddingValues(horizontal = 10.dp)) {
+                Icon(Icons.Default.DateRange, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(parsed?.toLocalDate()?.toString() ?: "—", maxLines = 1, softWrap = false)
             }
-            OutlinedButton(onClick = { showTime = true }, modifier = Modifier.weight(2f)) {
-                Icon(Icons.Default.Schedule, null)
-                Spacer(Modifier.width(8.dp))
-                Text(if (parsed == null || EventDateTime.isDateOnly(value)) "--:--" else "%02d:%02d".format(parsed.hour, parsed.minute), maxLines = 1)
+            // An all-day value has no time: the "all day" switch above decides that, not this button.
+            if (!allDay) OutlinedButton(onClick = { showTime = true }, modifier = Modifier.weight(2f), contentPadding = PaddingValues(horizontal = 10.dp)) {
+                Icon(Icons.Default.Schedule, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if (parsed == null) "--:--" else "%02d:%02d".format(parsed.hour, parsed.minute), maxLines = 1, softWrap = false)
             }
         }
     }
@@ -131,7 +158,7 @@ fun DateTimeField(label: String, value: String, onValueChange: (String) -> Unit,
     }
 
     if (showTime) {
-        val initial = if (parsed == null || EventDateTime.isDateOnly(value)) EventDateTime.defaultTime else parsed.toLocalTime()
+        val initial = parsed?.toLocalTime() ?: EventDateTime.defaultTime
         val state = rememberTimePickerState(initialHour = initial.hour, initialMinute = initial.minute, is24Hour = true)
         AlertDialog(
             onDismissRequest = { showTime = false },
@@ -144,5 +171,15 @@ fun DateTimeField(label: String, value: String, onValueChange: (String) -> Unit,
             },
             dismissButton = { TextButton(onClick = { showTime = false }) { Text(s.cancel) } }
         )
+    }
+}
+
+/** "All day" switch shown above the start and end fields. */
+@Composable
+fun AllDayRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    val s = LocalStrings.current
+    Row(modifier = modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(s.allDay, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

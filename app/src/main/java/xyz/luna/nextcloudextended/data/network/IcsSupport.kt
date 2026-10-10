@@ -3,6 +3,7 @@ package xyz.luna.nextcloudextended.data.network
 import xyz.luna.nextcloudextended.data.model.CalendarEvent
 import xyz.luna.nextcloudextended.data.model.NextcloudTask
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -19,6 +20,21 @@ internal object Ics {
     private val utcStamp = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)
 
     fun now(): String = utcStamp.format(Instant.now())
+
+    /**
+     * An all-day DTEND is exclusive (RFC 5545 §3.6.1: a one-day event on the 10th ends on the 11th). The app
+     * shows and edits the last day itself, so a one-day event has start == end; never earlier than the start.
+     */
+    fun inclusiveEnd(end: String, start: String?): String {
+        if (end.length != 10) return end
+        val last = runCatching { LocalDate.parse(end).minusDays(1) }.getOrNull() ?: return end
+        val first = start?.takeIf { it.length == 10 }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        return (if (first != null && last < first) first else last).toString()
+    }
+
+    /** Inverse of [inclusiveEnd]: the (exclusive) DTEND value for an all-day end shown as [end]. */
+    private fun exclusiveEndValue(end: String): String? =
+        runCatching { LocalDate.parse(end).plusDays(1).format(DateTimeFormatter.BASIC_ISO_DATE) }.getOrNull()
 
     /** RFC 5545 §3.1: a CRLF followed by a space/tab continues the previous line. */
     fun unfold(raw: String): List<String> {
@@ -136,13 +152,14 @@ internal object Ics {
             fun first(name: String) = props.firstOrNull { it.name == name }
             val uid = first("UID")?.value?.trim().orEmpty().ifEmpty { UUID.randomUUID().toString() }
             val recurring = props.any { it.name == "RECURRENCE-ID" || it.name == "RRULE" }
+            val startShown = first("DTSTART")?.let { formatIcsDate(it.value.trim(), it.params, zone) }
             events.add(
                 CalendarEvent(
                     id = uid,
                     summary = first("SUMMARY")?.value?.let { unescapeIcsText(it).trim() } ?: "No Title",
                     description = first("DESCRIPTION")?.value?.let { unescapeIcsText(it).trim() },
-                    startTime = first("DTSTART")?.let { formatIcsDate(it.value.trim(), it.params, zone) },
-                    endTime = first("DTEND")?.let { formatIcsDate(it.value.trim(), it.params, zone) },
+                    startTime = startShown,
+                    endTime = first("DTEND")?.let { formatIcsDate(it.value.trim(), it.params, zone) }?.let { inclusiveEnd(it, startShown) },
                     location = first("LOCATION")?.value?.let { unescapeIcsText(it).trim() },
                     calendarHref = calendarHref,
                     isRecurringInstance = recurring,
@@ -202,12 +219,12 @@ internal object Ics {
         val start = event.startTime?.takeIf { it.isNotBlank() }
         val end = event.endTime?.takeIf { it.isNotBlank() }
         val dtStart = icsDateLine("DTSTART", formatToIcsDate(start, zone))
-        val dtEnd = icsDateLine("DTEND", formatToIcsDate(end, zone))
+        val dtEnd = icsDateLine("DTEND", end?.let { if (it.length == 10) exclusiveEndValue(it) ?: formatToIcsDate(it, zone) else formatToIcsDate(it, zone) })
         return merge(original, "VEVENT", "PRODID:-//Nextcloud Extended//Calendar//EN", event.id, stamp, zone,
             managed = newProps,
             timed = listOf(
                 TimedProp("DTSTART", start, dtStart),
-                TimedProp("DTEND", end, dtEnd)
+                TimedProp("DTEND", end, dtEnd, exclusiveDateEnd = true)
             ),
             replaceAlso = mapOf("DTEND" to setOf("DURATION"))
         )
@@ -232,7 +249,7 @@ internal object Ics {
         )
     }
 
-    private class TimedProp(val name: String, val display: String?, val line: String?)
+    private class TimedProp(val name: String, val display: String?, val line: String?, val exclusiveDateEnd: Boolean = false)
 
     private fun merge(
         original: String?,
@@ -265,10 +282,13 @@ internal object Ics {
         val dropIndexes = props.filter { it.prop.name in managedNames }.map { it.index }.toHashSet()
 
         // Time properties the user did not touch keep their exact original line (TZID, VALUE=DATE, …).
+        val startShown = byName["DTSTART"]?.firstOrNull()?.prop?.let { formatIcsDate(it.value.trim(), it.params, zone) }
         val kept = HashMap<String, String>()
         for (t in timed) {
             val existing = byName[t.name]?.firstOrNull()?.prop
-            if (existing != null && formatIcsDate(existing.value.trim(), existing.params, zone) == t.display) kept[t.name] = existing.line
+            val raw = existing?.let { formatIcsDate(it.value.trim(), it.params, zone) }
+            val shown = if (t.exclusiveDateEnd && raw != null) inclusiveEnd(raw, startShown) else raw
+            if (existing != null && shown == t.display) kept[t.name] = existing.line
         }
         // State mirrors (COMPLETED …) stay as written while the state they describe is unchanged.
         for (name in keepIfUnchanged) {

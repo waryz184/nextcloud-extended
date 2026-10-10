@@ -1099,12 +1099,13 @@ val uris = buildList {
         var evDesc by remember(event) { mutableStateOf(event.description ?: "") }
         var evLoc by remember(event) { mutableStateOf(event.location ?: "") }
         var evStart by remember(event) { mutableStateOf(event.startTime ?: "") }
-        var evEnd by remember(event) { mutableStateOf(event.endTime ?: "") }
+        var evEnd by remember(event) { mutableStateOf(event.endTime?.takeIf { it.isNotBlank() } ?: EventDateTime.defaultEnd(event.startTime ?: "")) }
         AlertDialog(onDismissRequest = { editingEvent = null }, title = { Text(s.editEvent) },
             text = { Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(value = evTitle, onValueChange = { evTitle = it }, label = { Text(s.title) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
                 OutlinedTextField(value = evDesc, onValueChange = { evDesc = it }, label = { Text(s.description) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
                 OutlinedTextField(value = evLoc, onValueChange = { evLoc = it }, label = { Text(s.location) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+                AllDayRow(checked = EventDateTime.isDateOnly(evStart), onCheckedChange = { on -> val (a, b) = EventDateTime.setAllDay(evStart, evEnd, on); evStart = a; evEnd = b })
                 DateTimeField(label = s.startDateTime, value = evStart, onValueChange = { new -> evEnd = EventDateTime.shiftEnd(evStart, new, evEnd); evStart = new }, modifier = Modifier.padding(bottom = 8.dp))
                 DateTimeField(label = s.endDateTime, value = evEnd, onValueChange = { evEnd = it })
             } },
@@ -1277,6 +1278,7 @@ val uris = buildList {
                 OutlinedTextField(value = evTitle, onValueChange = { evTitle = it }, label = { Text(s.title) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
                 OutlinedTextField(value = evDesc, onValueChange = { evDesc = it }, label = { Text(s.description) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
                 OutlinedTextField(value = evLoc, onValueChange = { evLoc = it }, label = { Text(s.location) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+                AllDayRow(checked = EventDateTime.isDateOnly(evStart), onCheckedChange = { on -> val (a, b) = EventDateTime.setAllDay(evStart, evEnd, on); evStart = a; evEnd = b })
                 DateTimeField(label = s.startDateTime, value = evStart, onValueChange = { new -> evEnd = EventDateTime.shiftEnd(evStart, new, evEnd); evStart = new }, modifier = Modifier.padding(bottom = 8.dp))
                 DateTimeField(label = s.endDateTime, value = evEnd, onValueChange = { evEnd = it })
             } },

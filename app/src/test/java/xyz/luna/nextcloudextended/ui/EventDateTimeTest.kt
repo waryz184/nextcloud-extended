@@ -43,6 +43,18 @@ class EventDateTimeTest {
         assertFalse(EventDateTime.endBeforeStart("2025-06-28", "2025-06-28"))
     }
 
+    @Test fun allDaySwitchConvertsStartAndEndBothWays() {
+        assertEquals("2025-06-28" to "2025-06-29", EventDateTime.setAllDay("2025-06-28 10:00", "2025-06-29 11:00", true))
+        assertEquals("2025-06-28 10:00" to "2025-06-28 11:00", EventDateTime.setAllDay("2025-06-28", "2025-06-28", false))
+        assertEquals("2025-06-28" to "", EventDateTime.setAllDay("2025-06-28 10:00", "", true))
+    }
+
+    @Test fun defaultEndIsOneHourLaterOrTheSameDay() {
+        assertEquals("2025-06-28 11:00", EventDateTime.defaultEnd("2025-06-28 10:00"))
+        assertEquals("2025-06-28", EventDateTime.defaultEnd("2025-06-28"))
+        assertEquals("", EventDateTime.defaultEnd(""))
+    }
+
     @Test fun parseRejectsGarbage() {
         assertNull(EventDateTime.parse("tomorrow"))
         assertNull(EventDateTime.parse("2025-13-45 99:99"))
