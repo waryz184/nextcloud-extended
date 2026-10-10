@@ -395,6 +395,12 @@ class NextcloudViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /** Event and task times are converted when read, so a time zone change needs a fresh read. */
+    fun reloadForTimeZoneChange() {
+        loadAllActiveCalendarsEvents()
+        if (selectedTaskListHref.isNotEmpty()) loadTaskList(selectedTaskListHref, selectedTaskListName)
+    }
+
     fun toggleTaskStatus(task: NextcloudTask) {
         val updated = if (task.status == "COMPLETED") "NEEDS-ACTION" else "COMPLETED"
         call({ groupware.saveTask(task.copy(status = updated)) }, onFailure = { err -> errorMessage = s.taskUpdateFailed(msg(err)); refreshAndStop() }) { refreshAndStop() }

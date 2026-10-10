@@ -1,6 +1,10 @@
 package xyz.luna.nextcloudextended.data.network
 
 import java.net.URLEncoder
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 // Pure, stateless (de)serialization + URL helpers extracted from CalDavClient so they can be
 // unit-tested on the JVM without an Android runtime. Kept `internal` to the module.
@@ -73,14 +77,44 @@ internal fun icsDateLine(name: String, value: String?): String? {
     return if (value.length == 8) "$name;VALUE=DATE:$value" else "$name:$value"
 }
 
+/**
+ * The time zone events are shown and edited in (Settings → Time zone). The app sets it at start-up and
+ * whenever the user changes it; a blank or unknown id means "follow the device".
+ */
+object CalendarTimeZone {
+    @Volatile var current: ZoneId = ZoneId.systemDefault()
+
+    fun resolve(id: String?): ZoneId =
+        id?.takeIf { it.isNotBlank() }?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()
+}
+
+private val ICS_LOCAL = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss")
+private val ICS_UTC = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
+private val DISPLAY_LOCAL = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+private val TZID_PARAM = Regex("TZID=\"?([^\";:]+)\"?", RegexOption.IGNORE_CASE)
+
 // Parses an ICS date/date-time ("20250628", "20250628T140000Z") into the app's display form
-// ("YYYY-MM-DD" or "YYYY-MM-DD HH:MM").
-internal fun formatIcsDate(dateStr: String?): String? {
+// ("YYYY-MM-DD" or "YYYY-MM-DD HH:MM"), without any time zone conversion.
+internal fun formatIcsDate(dateStr: String?): String? = formatIcsDate(dateStr, "", ZoneOffset.UTC)
+
+/**
+ * Same, but a date-time is expressed in [zone]: a UTC value ("…Z") and a value carrying a `TZID`
+ * parameter (given in [params], e.g. "TZID=Europe/Paris") are converted; a floating value (no zone) and
+ * date-only values are shown as written.
+ */
+internal fun formatIcsDate(dateStr: String?, params: String, zone: ZoneId): String? {
     if (dateStr == null) return null
     val clean = dateStr.trim()
     if (clean.length >= 8) {
         val y = clean.substring(0, 4); val m = clean.substring(4, 6); val d = clean.substring(6, 8)
         if (clean.length >= 15 && clean.contains("T")) {
+            val local = runCatching { LocalDateTime.parse(clean.substring(0, 15), ICS_LOCAL) }.getOrNull()
+            if (local != null) {
+                val source: ZoneId? = if (clean.endsWith("Z", ignoreCase = true)) ZoneOffset.UTC
+                    else TZID_PARAM.find(params)?.groupValues?.get(1)?.let { runCatching { ZoneId.of(it) }.getOrNull() }
+                val shown = if (source == null) local else local.atZone(source).withZoneSameInstant(zone).toLocalDateTime()
+                return DISPLAY_LOCAL.format(shown)
+            }
             val h = clean.substring(9, 11); val min = clean.substring(11, 13)
             return "$y-$m-$d $h:$min"
         }
@@ -89,12 +123,16 @@ internal fun formatIcsDate(dateStr: String?): String? {
     return dateStr
 }
 
-// Inverse of formatIcsDate: the app's display form back into an ICS value.
-internal fun formatToIcsDate(dateTimeStr: String?): String? {
+// Inverse of formatIcsDate: the app's display form back into an ICS value (UTC, no zone conversion).
+internal fun formatToIcsDate(dateTimeStr: String?): String? = formatToIcsDate(dateTimeStr, ZoneOffset.UTC)
+
+// Inverse of the zone-aware formatIcsDate: a display date-time typed in [zone] becomes a UTC ICS value.
+internal fun formatToIcsDate(dateTimeStr: String?, zone: ZoneId): String? {
     if (dateTimeStr == null) return null
     val clean = dateTimeStr.trim()
     if (clean.length == 16 && clean[4] == '-' && clean[7] == '-' && clean[10] == ' ' && clean[13] == ':') {
-        return "${clean.substring(0,4)}${clean.substring(5,7)}${clean.substring(8,10)}T${clean.substring(11,13)}${clean.substring(14,16)}00Z"
+        val local = runCatching { LocalDateTime.parse(clean, DISPLAY_LOCAL) }.getOrNull()
+        if (local != null) return ICS_UTC.format(local.atZone(zone).withZoneSameInstant(ZoneOffset.UTC))
     }
     if (clean.length == 10 && clean[4] == '-' && clean[7] == '-') {
         return "${clean.substring(0,4)}${clean.substring(5,7)}${clean.substring(8,10)}"

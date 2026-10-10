@@ -6,6 +6,8 @@ import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -27,6 +29,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import xyz.luna.nextcloudextended.HubTab
+import xyz.luna.nextcloudextended.LocalExtra
 import xyz.luna.nextcloudextended.LocalStrings
 import xyz.luna.nextcloudextended.OfficeViewerType
 import xyz.luna.nextcloudextended.account.NextcloudAccountManager
@@ -34,11 +37,13 @@ import xyz.luna.nextcloudextended.account.NextcloudAccounts
 import xyz.luna.nextcloudextended.account.AccountProfile
 import xyz.luna.nextcloudextended.icon
 import xyz.luna.nextcloudextended.label
+import java.time.Instant
+import java.time.ZoneId
 
 private const val MIN_PINNED_TABS = 1
 private const val MAX_PINNED_TABS = 4
 
-private enum class SettingsCategory { ACCOUNTS, OFFICE_VIEWER, NAVIGATION_BAR, CONTACTS_SYNC, AUTO_UPLOAD }
+private enum class SettingsCategory { ACCOUNTS, OFFICE_VIEWER, NAVIGATION_BAR, CONTACTS_SYNC, AUTO_UPLOAD, TIME_ZONE }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,12 +62,15 @@ fun SettingsScreen(
     onMediaChargingOnlyChange: (Boolean) -> Unit = {},
     mediaSubfolder: String = "InstantUpload",
     onMediaSubfolderChange: (String) -> Unit = {},
+    calendarTimeZoneId: String = "",
+    onCalendarTimeZoneChange: (String) -> Unit = {},
     accounts: List<AccountProfile>,
     activeAccountId: String?,
     onAccountSelected: (AccountProfile) -> Unit,
     onDismiss: () -> Unit
 ) {
     val s = LocalStrings.current
+    val x = LocalExtra.current
     var category by remember { mutableStateOf<SettingsCategory?>(null) }
 
     BackHandler(enabled = category != null) { category = null }
@@ -79,6 +87,7 @@ fun SettingsScreen(
                             SettingsCategory.OFFICE_VIEWER -> s.officeViewerSection
                             SettingsCategory.NAVIGATION_BAR -> s.navBarSection
                             SettingsCategory.CONTACTS_SYNC -> s.contactsSyncSection
+                            SettingsCategory.TIME_ZONE -> x.timeZoneSection
                         }
                     )
                 },
@@ -104,6 +113,7 @@ fun SettingsScreen(
                 onAppLockChange = onAppLockChange,
                 mediaAutoUploadEnabled = mediaAutoUploadEnabled,
                 mediaSubfolder = mediaSubfolder,
+                calendarTimeZoneId = calendarTimeZoneId,
                 accounts = accounts
             )
             SettingsCategory.ACCOUNTS -> AccountsSettings(
@@ -136,6 +146,11 @@ fun SettingsScreen(
             SettingsCategory.CONTACTS_SYNC -> ContactsSyncSettings(
                 modifier = Modifier.padding(padding)
             )
+            SettingsCategory.TIME_ZONE -> TimeZoneSettings(
+                modifier = Modifier.padding(padding),
+                selectedId = calendarTimeZoneId,
+                onSelected = onCalendarTimeZoneChange
+            )
         }
     }
 }
@@ -149,9 +164,11 @@ private fun SettingsRoot(
     onAppLockChange: (Boolean) -> Unit,
     mediaAutoUploadEnabled: Boolean,
     mediaSubfolder: String,
+    calendarTimeZoneId: String,
     accounts: List<AccountProfile>
 ) {
     val s = LocalStrings.current
+    val x = LocalExtra.current
     Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         SettingsCategoryRow(
             title = "Accounts",
@@ -169,6 +186,12 @@ private fun SettingsRoot(
             title = s.officeViewerSection,
             subtitle = if (officeViewerPref == OfficeViewerType.POI) s.officeViewerPoi else s.officeViewerOnline,
             onClick = { onCategoryClick(SettingsCategory.OFFICE_VIEWER) }
+        )
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        SettingsCategoryRow(
+            title = x.timeZoneSection,
+            subtitle = if (calendarTimeZoneId.isBlank()) x.timeZoneDevice(ZoneId.systemDefault().id) else zoneLabel(calendarTimeZoneId),
+            onClick = { onCategoryClick(SettingsCategory.TIME_ZONE) }
         )
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
         Row(
@@ -333,6 +356,67 @@ private fun OfficeViewerSettings(
             description = s.officeViewerOnlineDesc,
             onClick = { onOfficeViewerPrefChange(OfficeViewerType.ONLINE) }
         )
+    }
+}
+
+/** "Europe/Paris (UTC+02:00)" — the offset is the one in force today, so summer/winter time is visible. */
+private fun zoneLabel(id: String): String {
+    val offset = runCatching { ZoneId.of(id).rules.getOffset(Instant.now()).id }.getOrNull() ?: return id
+    return "$id (UTC${if (offset == "Z") "+00:00" else offset})"
+}
+
+private val selectableZoneIds: List<String> by lazy {
+    (ZoneId.getAvailableZoneIds().filter { '/' in it && !it.startsWith("Etc/") && !it.startsWith("SystemV/") } + "UTC").sorted()
+}
+
+@Composable
+private fun TimeZoneSettings(modifier: Modifier = Modifier, selectedId: String, onSelected: (String) -> Unit) {
+    val x = LocalExtra.current
+    var query by remember { mutableStateOf("") }
+    val needle = query.trim().replace(' ', '_')
+    val zones = remember(needle) {
+        if (needle.isEmpty()) selectableZoneIds else selectableZoneIds.filter { it.contains(needle, ignoreCase = true) }
+    }
+    Column(modifier = modifier.fillMaxSize()) {
+        Text(
+            x.timeZoneSectionDesc, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(16.dp)
+        )
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = { Text(x.timeZoneSearch) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+        )
+        Spacer(Modifier.height(8.dp))
+        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            if (needle.isEmpty()) {
+                item(key = "device") {
+                    ViewerOption(
+                        selected = selectedId.isBlank(),
+                        title = x.timeZoneDevice(ZoneId.systemDefault().id),
+                        description = zoneLabel(ZoneId.systemDefault().id),
+                        onClick = { onSelected("") }
+                    )
+                }
+            } else if (zones.isEmpty()) {
+                item(key = "none") {
+                    Text(x.timeZoneNoMatch, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            items(zones, key = { it }) { id ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { onSelected(id) }.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(selected = id == selectedId, onClick = { onSelected(id) })
+                    Spacer(Modifier.width(12.dp))
+                    Text(zoneLabel(id), style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }
     }
 }
 

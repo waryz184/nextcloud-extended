@@ -78,7 +78,7 @@ class GroupwareApi(private val session: DavSession) {
         val responses = session.call(dav(collectionUrl(calendarHref), "REPORT", "1", body), CallOptions(accept = setOf(207))).use(::parse)
         return responses.flatMap { r ->
             val data = r.text(DavNs.CALDAV, "calendar-data").orEmpty()
-            if (data.isBlank()) emptyList() else Ics.parseEvents(data, calendarHref, r.href, FileApi.parseEtag(r.text(DavNs.DAV, "getetag")))
+            if (data.isBlank()) emptyList() else Ics.parseEvents(data, calendarHref, r.href, FileApi.parseEtag(r.text(DavNs.DAV, "getetag")), CalendarTimeZone.current)
         }
     }
 
@@ -91,7 +91,7 @@ class GroupwareApi(private val session: DavSession) {
         val responses = session.call(dav(collectionUrl(calendarHref), "REPORT", "1", body), CallOptions(accept = setOf(207))).use(::parse)
         return responses.flatMap { r ->
             val data = r.text(DavNs.CALDAV, "calendar-data").orEmpty()
-            if (data.isBlank()) emptyList() else Ics.parseTasks(data, calendarHref, r.href, FileApi.parseEtag(r.text(DavNs.DAV, "getetag")))
+            if (data.isBlank()) emptyList() else Ics.parseTasks(data, calendarHref, r.href, FileApi.parseEtag(r.text(DavNs.DAV, "getetag")), CalendarTimeZone.current)
         }
     }
 
@@ -110,12 +110,12 @@ class GroupwareApi(private val session: DavSession) {
      */
     fun saveEvent(calendarHref: String, event: CalendarEvent) {
         val name = event.href.takeIf { it.isNotBlank() } ?: "${collectionUrl(calendarHref)}${event.id}.ics"
-        saveCalendarObject(name, isNew = event.href.isBlank()) { stored -> Ics.mergeEvent(stored, event) }
+        saveCalendarObject(name, isNew = event.href.isBlank()) { stored -> Ics.mergeEvent(stored, event, zone = CalendarTimeZone.current) }
     }
 
     fun saveTask(task: NextcloudTask) {
         val name = task.href.takeIf { it.isNotBlank() } ?: "${collectionUrl(task.calendarHref)}${task.uid}.ics"
-        saveCalendarObject(name, isNew = task.href.isBlank()) { stored -> Ics.mergeTask(stored, task) }
+        saveCalendarObject(name, isNew = task.href.isBlank()) { stored -> Ics.mergeTask(stored, task, zone = CalendarTimeZone.current) }
     }
 
     private fun saveCalendarObject(href: String, isNew: Boolean, build: (String?) -> String) {

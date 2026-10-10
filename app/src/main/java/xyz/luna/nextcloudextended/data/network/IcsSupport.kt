@@ -3,6 +3,7 @@ package xyz.luna.nextcloudextended.data.network
 import xyz.luna.nextcloudextended.data.model.CalendarEvent
 import xyz.luna.nextcloudextended.data.model.NextcloudTask
 import java.time.Instant
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.UUID
@@ -124,7 +125,8 @@ internal object Ics {
 
     // ── Reading ─────────────────────────────────────────────────────────────────────────────
 
-    fun parseEvents(ics: String, calendarHref: String, href: String = "", etag: String? = null): List<CalendarEvent> {
+    /** Date-times are converted to [zone] for display (see [formatIcsDate]). */
+    fun parseEvents(ics: String, calendarHref: String, href: String = "", etag: String? = null, zone: ZoneId = ZoneOffset.UTC): List<CalendarEvent> {
         val lines = unfold(ics)
         val events = ArrayList<CalendarEvent>()
         var from = 0
@@ -139,8 +141,8 @@ internal object Ics {
                     id = uid,
                     summary = first("SUMMARY")?.value?.let { unescapeIcsText(it).trim() } ?: "No Title",
                     description = first("DESCRIPTION")?.value?.let { unescapeIcsText(it).trim() },
-                    startTime = formatIcsDate(first("DTSTART")?.value?.trim()),
-                    endTime = formatIcsDate(first("DTEND")?.value?.trim()),
+                    startTime = first("DTSTART")?.let { formatIcsDate(it.value.trim(), it.params, zone) },
+                    endTime = first("DTEND")?.let { formatIcsDate(it.value.trim(), it.params, zone) },
                     location = first("LOCATION")?.value?.let { unescapeIcsText(it).trim() },
                     calendarHref = calendarHref,
                     isRecurringInstance = recurring,
@@ -153,7 +155,7 @@ internal object Ics {
         return events
     }
 
-    fun parseTasks(ics: String, calendarHref: String, href: String = "", etag: String? = null): List<NextcloudTask> {
+    fun parseTasks(ics: String, calendarHref: String, href: String = "", etag: String? = null, zone: ZoneId = ZoneOffset.UTC): List<NextcloudTask> {
         val lines = unfold(ics)
         val tasks = ArrayList<NextcloudTask>()
         var from = 0
@@ -168,7 +170,7 @@ internal object Ics {
                     description = first("DESCRIPTION")?.value?.let { unescapeIcsText(it).trim() },
                     status = first("STATUS")?.value?.trim()?.uppercase()
                         ?: if (first("COMPLETED") != null) "COMPLETED" else "NEEDS-ACTION",
-                    due = formatIcsDate(first("DUE")?.value?.trim()),
+                    due = first("DUE")?.let { formatIcsDate(it.value.trim(), it.params, zone) },
                     calendarHref = calendarHref,
                     href = href,
                     etag = etag
@@ -190,15 +192,15 @@ internal object Ics {
      * Builds the resource to PUT for [event]. With [original] (the resource as currently stored on
      * the server) only the edited properties change; without it a fresh, valid VCALENDAR is created.
      */
-    fun mergeEvent(original: String?, event: CalendarEvent, stamp: String = now()): String {
+    fun mergeEvent(original: String?, event: CalendarEvent, stamp: String = now(), zone: ZoneId = ZoneOffset.UTC): String {
         val newProps = linkedMapOf<String, String?>(
             "SUMMARY" to "SUMMARY:${escapeIcsText(event.summary)}",
             "DESCRIPTION" to event.description?.takeIf { it.isNotEmpty() }?.let { "DESCRIPTION:${escapeIcsText(it)}" },
             "LOCATION" to event.location?.takeIf { it.isNotEmpty() }?.let { "LOCATION:${escapeIcsText(it)}" }
         )
-        val dtStart = icsDateLine("DTSTART", formatToIcsDate(event.startTime))
-        val dtEnd = icsDateLine("DTEND", formatToIcsDate(event.endTime))
-        return merge(original, "VEVENT", "PRODID:-//Nextcloud Extended//Calendar//EN", event.id, stamp,
+        val dtStart = icsDateLine("DTSTART", formatToIcsDate(event.startTime, zone))
+        val dtEnd = icsDateLine("DTEND", formatToIcsDate(event.endTime, zone))
+        return merge(original, "VEVENT", "PRODID:-//Nextcloud Extended//Calendar//EN", event.id, stamp, zone,
             managed = newProps,
             timed = listOf(
                 TimedProp("DTSTART", event.startTime, dtStart),
@@ -208,7 +210,7 @@ internal object Ics {
         )
     }
 
-    fun mergeTask(original: String?, task: NextcloudTask, stamp: String = now()): String {
+    fun mergeTask(original: String?, task: NextcloudTask, stamp: String = now(), zone: ZoneId = ZoneOffset.UTC): String {
         val completed = task.status.equals("COMPLETED", ignoreCase = true)
         val managed = linkedMapOf<String, String?>(
             "SUMMARY" to "SUMMARY:${escapeIcsText(task.summary)}",
@@ -218,8 +220,8 @@ internal object Ics {
             "COMPLETED" to if (completed) "COMPLETED:$stamp" else null,
             "PERCENT-COMPLETE" to if (completed) "PERCENT-COMPLETE:100" else null
         )
-        val due = icsDateLine("DUE", formatToIcsDate(task.due))
-        return merge(original, "VTODO", "PRODID:-//Nextcloud Extended//Tasks//EN", task.uid, stamp,
+        val due = icsDateLine("DUE", formatToIcsDate(task.due, zone))
+        return merge(original, "VTODO", "PRODID:-//Nextcloud Extended//Tasks//EN", task.uid, stamp, zone,
             managed = managed,
             timed = listOf(TimedProp("DUE", task.due, due)),
             replaceAlso = emptyMap(),
@@ -235,6 +237,7 @@ internal object Ics {
         prodId: String,
         uid: String,
         stamp: String,
+        zone: ZoneId,
         managed: Map<String, String?>,
         timed: List<TimedProp>,
         replaceAlso: Map<String, Set<String>>,
@@ -262,7 +265,7 @@ internal object Ics {
         val kept = HashMap<String, String>()
         for (t in timed) {
             val existing = byName[t.name]?.firstOrNull()?.prop
-            if (existing != null && formatIcsDate(existing.value.trim()) == t.display) kept[t.name] = existing.line
+            if (existing != null && formatIcsDate(existing.value.trim(), existing.params, zone) == t.display) kept[t.name] = existing.line
         }
         // State mirrors (COMPLETED …) stay as written while the state they describe is unchanged.
         for (name in keepIfUnchanged) {

@@ -82,6 +82,28 @@ class SerializationTest {
         assertEquals("2025-06-28", formatIcsDate("20250628"))
     }
 
+    @Test fun formatIcsDate_convertsUtcAndTzidToTheZone() {
+        val paris = java.time.ZoneId.of("Europe/Paris")
+        assertEquals("2025-06-28 12:00", formatIcsDate("20250628T100000Z", "", paris))
+        assertEquals("2025-01-15 11:00", formatIcsDate("20250115T100000Z", "", paris))
+        assertEquals("2025-06-28 12:00", formatIcsDate("20250628T060000", "TZID=America/New_York", paris))
+        assertEquals("2025-06-28 09:00", formatIcsDate("20250628T090000", "", paris)) // floating: as written
+        assertEquals("2025-06-28", formatIcsDate("20250628", "VALUE=DATE", paris))
+    }
+
+    @Test fun formatToIcsDate_convertsFromTheZoneToUtc() {
+        val paris = java.time.ZoneId.of("Europe/Paris")
+        assertEquals("20250628T100000Z", formatToIcsDate("2025-06-28 12:00", paris))
+        assertEquals("20250115T110000Z", formatToIcsDate("2025-01-15 12:00", paris))
+        assertEquals("20250628", formatToIcsDate("2025-06-28", paris))
+    }
+
+    @Test fun calendarTimeZone_resolvesBlankAndUnknownIdsToTheDevice() {
+        assertEquals(java.time.ZoneId.systemDefault(), CalendarTimeZone.resolve(""))
+        assertEquals(java.time.ZoneId.systemDefault(), CalendarTimeZone.resolve("Not/AZone"))
+        assertEquals(java.time.ZoneId.of("Europe/Paris"), CalendarTimeZone.resolve("Europe/Paris"))
+    }
+
     @Test fun icsDateLine_marksDateOnlyValues() {
         assertEquals("DUE;VALUE=DATE:20250628", icsDateLine("DUE", "20250628"))
         assertEquals("DTSTART:20250628T140000Z", icsDateLine("DTSTART", "20250628T140000Z"))

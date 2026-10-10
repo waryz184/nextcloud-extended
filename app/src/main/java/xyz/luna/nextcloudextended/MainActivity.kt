@@ -71,6 +71,7 @@ import xyz.luna.nextcloudextended.upload.DownloadRepository
 import xyz.luna.nextcloudextended.upload.OfflineCacheManager
 import xyz.luna.nextcloudextended.upload.OfflineOperationReplayer
 import xyz.luna.nextcloudextended.upload.NextcloudDatabase
+import xyz.luna.nextcloudextended.data.network.CalendarTimeZone
 import xyz.luna.nextcloudextended.data.network.normalizeServerInput
 import java.io.File
 import java.util.Locale
@@ -406,6 +407,12 @@ var mediaAutoUploadEnabled by remember {
     }
     var mediaSubfolder by remember {
         mutableStateOf(sharedPrefs.getString(MediaAutoUploadReceiver.KEY_SUBFOLDER, "InstantUpload") ?: "InstantUpload")
+    }
+    // Time zone events and tasks are shown in ("" = follow the device). Applied before the first calendar load.
+    var calendarTimeZoneId by remember {
+        val saved = sharedPrefs.getString("calendar_time_zone", "") ?: ""
+        CalendarTimeZone.current = CalendarTimeZone.resolve(saved)
+        mutableStateOf(saved)
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -1419,6 +1426,15 @@ mediaAutoUploadEnabled = mediaAutoUploadEnabled,
                     onMediaSubfolderChange = { value ->
                         mediaSubfolder = value
                         sharedPrefs.edit().putString(MediaAutoUploadReceiver.KEY_SUBFOLDER, value).apply()
+                    },
+                    calendarTimeZoneId = calendarTimeZoneId,
+                    onCalendarTimeZoneChange = { id ->
+                        if (id != calendarTimeZoneId) {
+                            calendarTimeZoneId = id
+                            sharedPrefs.edit().putString("calendar_time_zone", id).apply()
+                            CalendarTimeZone.current = CalendarTimeZone.resolve(id)
+                            vm.reloadForTimeZoneChange()
+                        }
                     },
                     accounts = accounts,
                     activeAccountId = accounts.firstOrNull { it.serverUrl == serverUrl && it.username == username }?.id,

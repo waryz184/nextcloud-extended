@@ -133,7 +133,13 @@ class ExtraStrings(
     val transferCompleted: String,
     val transferFailed: String,
     val transferCancelled: String,
-    val transferRetry: String
+    val transferRetry: String,
+    // ── Time zone setting ──
+    val timeZoneSection: String,
+    val timeZoneSectionDesc: String,
+    val timeZoneDevice: (String) -> String,
+    val timeZoneSearch: String,
+    val timeZoneNoMatch: String
 ) {
     /** One line a person can act on, for any failure produced by the network layer. */
     fun describe(error: Throwable): String {
@@ -279,7 +285,12 @@ val EnExtra = ExtraStrings(
     transferCompleted = "Completed",
     transferFailed = "Failed",
     transferCancelled = "Cancelled",
-    transferRetry = "Retry"
+    transferRetry = "Retry",
+    timeZoneSection = "Time zone",
+    timeZoneSectionDesc = "Times of events and tasks are shown and saved in this time zone.",
+    timeZoneDevice = { "Same as the device ($it)" },
+    timeZoneSearch = "Search a time zone (e.g. Paris)",
+    timeZoneNoMatch = "No matching time zone"
 )
 
 val FrExtra = ExtraStrings(
@@ -395,7 +406,12 @@ val FrExtra = ExtraStrings(
     transferCompleted = "Terminé",
     transferFailed = "Échec",
     transferCancelled = "Annulé",
-    transferRetry = "Réessayer"
+    transferRetry = "Réessayer",
+    timeZoneSection = "Fuseau horaire",
+    timeZoneSectionDesc = "Les heures des événements et des tâches sont affichées et enregistrées dans ce fuseau horaire.",
+    timeZoneDevice = { "Identique à l'appareil ($it)" },
+    timeZoneSearch = "Rechercher un fuseau horaire (ex. Paris)",
+    timeZoneNoMatch = "Aucun fuseau horaire correspondant"
 )
 
 fun extraFor(language: AppLanguage): ExtraStrings = when (language) {

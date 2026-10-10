@@ -6,8 +6,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import xyz.luna.nextcloudextended.data.model.CalendarEvent
 import xyz.luna.nextcloudextended.data.model.NextcloudTask
+import java.time.ZoneId
+import java.time.ZoneOffset
 
 class IcsSupportTest {
+
+    private val paris = ZoneId.of("Europe/Paris")
 
     private val stored = listOf(
         "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Thunderbird//EN",
@@ -30,7 +34,7 @@ class IcsSupportTest {
         CalendarEvent("evt-1", summary, null, start, end, null, "/cal/", false, "/cal/abc.ics", "etag1")
 
     @Test fun editingTheTitleKeepsEveryOtherProperty() {
-        val merged = Ics.mergeEvent(stored, event(summary = "Team sync (moved)"), stamp = "20250101T000000Z")
+        val merged = Ics.mergeEvent(stored, event(summary = "Team sync (moved)"), stamp = "20250101T000000Z", zone = paris)
         assertTrue(merged.contains("SUMMARY:Team sync (moved)"))
         assertTrue("alarm must survive", merged.contains("BEGIN:VALARM") && merged.contains("TRIGGER:-PT15M"))
         assertTrue(merged.contains("ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com"))
@@ -47,17 +51,45 @@ class IcsSupportTest {
     }
 
     @Test fun changingTheTimeWritesTheNewValue() {
-        val merged = Ics.mergeEvent(stored, event(start = "2025-03-10 11:00", end = "2025-03-10 12:00"), stamp = "20250101T000000Z")
-        assertTrue(merged.contains("DTSTART:20250310T110000Z"))
+        val merged = Ics.mergeEvent(stored, event(start = "2025-03-10 11:00", end = "2025-03-10 12:00"), stamp = "20250101T000000Z", zone = paris)
+        assertTrue("11:00 Paris (CET) is 10:00 UTC", merged.contains("DTSTART:20250310T100000Z"))
         assertFalse(merged.contains("TZID=Europe/Paris:20250310T090000"))
     }
 
     @Test fun mergedOutputRoundTripsThroughTheParser() {
-        val merged = Ics.mergeEvent(stored, event(summary = "Renamed"), stamp = "20250101T000000Z")
-        val parsed = Ics.parseEvents(merged, "/cal/", "/cal/abc.ics", "etag1").single()
+        val merged = Ics.mergeEvent(stored, event(summary = "Renamed"), stamp = "20250101T000000Z", zone = paris)
+        val parsed = Ics.parseEvents(merged, "/cal/", "/cal/abc.ics", "etag1", paris).single()
         assertEquals("Renamed", parsed.summary)
         assertEquals("evt-1", parsed.id)
         assertEquals("2025-03-10 09:00", parsed.startTime)
+    }
+
+    @Test fun utcEventIsShownInTheChosenZone() {
+        // Created in the Nextcloud web UI at 12:00 Paris (CEST): stored as 10:00 UTC.
+        val ics = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:u\r\nSUMMARY:Lunch\r\nDTSTART:20250628T100000Z\r\nDTEND:20250628T110000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+        val shown = Ics.parseEvents(ics, "/c/", zone = paris).single()
+        assertEquals("2025-06-28 12:00", shown.startTime)
+        assertEquals("2025-06-28 13:00", shown.endTime)
+        assertEquals("2025-06-28 10:00", Ics.parseEvents(ics, "/c/", zone = ZoneOffset.UTC).single().startTime)
+    }
+
+    @Test fun eventTypedInTheChosenZoneIsStoredAsUtc() {
+        val ics = Ics.mergeEvent(null, CalendarEvent("n", "Lunch", null, "2025-06-28 12:00", "2025-06-28 13:00", null, "/c/"), stamp = "20250101T000000Z", zone = paris)
+        assertTrue(ics.contains("DTSTART:20250628T100000Z"))
+        assertTrue(ics.contains("DTEND:20250628T110000Z"))
+    }
+
+    @Test fun tzidEventIsConvertedToAnotherZone() {
+        val shown = Ics.parseEvents(stored, "/cal/", zone = ZoneId.of("America/New_York")).single()
+        assertEquals("2025-03-10 04:00", shown.startTime) // 09:00 CET = 08:00 UTC = 04:00 EDT
+    }
+
+    @Test fun unchangedTimesKeepTheirTzidWhateverTheDisplayZone() {
+        val ny = ZoneId.of("America/New_York")
+        val shown = Ics.parseEvents(stored, "/cal/", "/cal/abc.ics", "etag1", ny).single()
+        val merged = Ics.mergeEvent(stored, shown.copy(summary = "Renamed"), stamp = "20250101T000000Z", zone = ny)
+        assertTrue(merged.contains("DTSTART;TZID=Europe/Paris:20250310T090000"))
+        assertTrue(merged.contains("DTEND;TZID=Europe/Paris:20250310T100000"))
     }
 
     @Test fun freshEventIsAValidCalendarObject() {
